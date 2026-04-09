@@ -85,6 +85,12 @@ class Player:
                 min(self.data.shape[0] - 1, self.frame + int(delta * self.sr)),
             )
 
+    def seek_to(self, t: float) -> None:
+        with self._lock:
+            self.frame = max(
+                0, min(self.data.shape[0] - 1, int(t * self.sr))
+            )
+
     def set_speed(self, speed: float) -> None:
         speed = max(self.MIN_SPEED, min(self.MAX_SPEED, speed))
         was_playing = self.playing

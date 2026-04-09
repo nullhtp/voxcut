@@ -1,22 +1,41 @@
 """Textual TUI: play, cut fragments, isolate voices."""
 from __future__ import annotations
 
-import enum
 import tempfile
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import soundfile as sf
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import (
+    Footer,
+    Header,
+    Label,
+    ListItem,
+    ListView,
+    RichLog,
+    Static,
+)
 
-from . import ffmpeg
+from . import ffmpeg, session, waveform
 from .fragment import Fragment
 from .player import Player
-from .separator import SamSeparator, load_mono, slice_mono
+from .screens import (
+    DescribePrompt,
+    HelpScreen,
+    ResultDecision,
+    SaveDialog,
+    SaveRequest,
+    SeparationResultData,
+    SeparationResultScreen,
+)
+from .separator import SamSeparator, slice_mono
 from .timeutil import fmt_time
 
 try:
@@ -25,29 +44,38 @@ try:
 except ImportError:
     _HAS_FSPICKER = False
 
-_AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wma", ".aiff"}
+_AUDIO_EXTS = {
+    ".mp3", ".wav", ".flac", ".m4a", ".ogg",
+    ".opus", ".aac", ".wma", ".aiff",
+}
 _PROGRESS_BAR_WIDTH = 40
-
-
-class _Prompt(enum.Enum):
-    NONE = enum.auto()
-    SAVE_MODE = enum.auto()
-    SAVE_PATH = enum.auto()
-    SEP_DESC = enum.auto()
+_WAVEFORM_WIDTH = 80
 
 
 def _safe_slug(text: str, limit: int = 32) -> str:
     return "".join(c if c.isalnum() else "_" for c in text)[:limit]
 
 
+@dataclass
+class _PendingSeparation:
+    """Context carried across describe → run → result → optional rerun."""
+    description: str
+    mono: np.ndarray
+    sr: int
+    tag: str
+    out_base: Path
+    fragment: Optional[Fragment]
+
+
 class AudioTUI(App):
     CSS = """
     Screen { layout: vertical; }
-    #status { height: 3; padding: 1 2; background: $boost; }
+    #status { height: 1; padding: 0 2; background: $boost; }
     #progress { height: 1; padding: 0 2; color: $accent; }
-    #marks { height: 3; padding: 0 2; }
+    #waveform { height: 1; padding: 0 2; }
+    #marks { height: 1; padding: 0 2; color: $text-muted; }
     #list { height: 1fr; border: tall $primary; }
-    #prompt { height: 3; border: tall $warning; display: none; }
+    #log { height: 6; border: tall $accent-lighten-1; }
     """
 
     BINDINGS = [
@@ -61,10 +89,13 @@ class AudioTUI(App):
         Binding("i", "mark_in", "mark in"),
         Binding("o", "mark_out", "mark out"),
         Binding("x", "del_fragment", "delete"),
+        Binding("u", "undo_delete", "undo"),
         Binding("s", "save", "save cuts"),
         Binding("d", "separate", "isolate voice"),
+        Binding("ctrl+k", "cancel_separation", "cancel isolation"),
         Binding("f", "open_file", "open file"),
-        Binding("q", "quit", "quit"),
+        Binding("question_mark,?", "help", "help"),
+        Binding("q", "quit_app", "quit"),
     ]
 
     position = reactive(0.0)
@@ -77,14 +108,24 @@ class AudioTUI(App):
         self.fragments: list[Fragment] = []
         self.in_point: Optional[float] = None
         self.player = self._load_player(wav)
-        self._prompt_mode = _Prompt.NONE
-        self._save_mode: Optional[str] = None
-        self._default_out: str = ""
+        self._peaks = self._compute_peaks()
+        self._last_description = ""
+        self._undo_stack: list[Fragment] = []
+        self._play_until: Optional[float] = None
+        self._sep_busy = False
+        self._sep_generation = 0
+
+    # --- file loading ---
 
     @staticmethod
     def _load_player(wav: Path) -> Player:
         data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
         return Player(data, sr)
+
+    def _compute_peaks(self) -> np.ndarray:
+        data = self.player.data
+        mono = data.mean(axis=1) if data.shape[1] > 1 else data[:, 0]
+        return waveform.compute_peaks(mono, _WAVEFORM_WIDTH)
 
     # --- layout ---
 
@@ -92,40 +133,60 @@ class AudioTUI(App):
         yield Header()
         yield Static(self._header_text(), id="status")
         yield Static("", id="progress")
+        yield Static("", id="waveform")
         yield Static("", id="marks")
         yield ListView(id="list")
-        yield Input(placeholder="", id="prompt")
+        log = RichLog(id="log", highlight=False, markup=True, wrap=True)
+        log.can_focus = False
+        yield log
         yield Footer()
 
     def on_mount(self) -> None:
         self.set_interval(0.1, self._tick)
         self._refresh_marks()
         self._refresh_list()
+        self._load_session()
+        self._log(f"[dim]opened[/dim] {self.src.name} "
+                  f"([dim]{fmt_time(self.player.duration)}[/dim])")
+        self._log("press [b]?[/b] for help")
 
     def on_unmount(self) -> None:
+        self._save_session()
         self.player.close()
 
-    # --- widget accessors (keeps IDs in one place) ---
+    # --- widget accessors ---
 
     @property
     def _w_status(self) -> Static: return self.query_one("#status", Static)
     @property
     def _w_progress(self) -> Static: return self.query_one("#progress", Static)
     @property
+    def _w_waveform(self) -> Static: return self.query_one("#waveform", Static)
+    @property
     def _w_marks(self) -> Static: return self.query_one("#marks", Static)
     @property
     def _w_list(self) -> ListView: return self.query_one("#list", ListView)
     @property
-    def _w_prompt(self) -> Input: return self.query_one("#prompt", Input)
+    def _w_log(self) -> RichLog: return self.query_one("#log", RichLog)
 
     # --- view helpers ---
 
     def _header_text(self) -> str:
-        return f"File: {self.src.name}   duration: {fmt_time(self.player.duration)}"
+        return (
+            f"File: {self.src.name}   "
+            f"duration: {fmt_time(self.player.duration)}"
+        )
 
     def _tick(self) -> None:
         self.position = self.player.position
         pos, dur = self.player.position, self.player.duration
+
+        # auto-stop at fragment end
+        if self._play_until is not None and pos >= self._play_until:
+            if self.player.playing:
+                self.player.toggle()
+            self._play_until = None
+
         filled = int(_PROGRESS_BAR_WIDTH * (pos / dur)) if dur else 0
         bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
         state = "▶" if self.player.playing else "⏸"
@@ -133,11 +194,13 @@ class AudioTUI(App):
             f"{state} {bar} {fmt_time(pos)} / {fmt_time(dur)}   "
             f"speed {self.player.speed:.1f}x"
         )
+        cursor_frac = (pos / dur) if dur else 0.0
+        self._w_waveform.update(waveform.render(self._peaks, cursor_frac))
 
     def _refresh_marks(self) -> None:
         ip = fmt_time(self.in_point) if self.in_point is not None else "—"
         self._w_marks.update(
-            f"in: {ip}    (i=mark in, o=mark out, s=save cuts, d=isolate voice)"
+            f"in: {ip}    ({len(self.fragments)} fragments — enter to play, ? for help)"
         )
 
     def _refresh_list(self) -> None:
@@ -146,8 +209,8 @@ class AudioTUI(App):
         for i, frag in enumerate(self.fragments):
             lv.append(ListItem(Label(frag.label(i))))
 
-    def _set_status(self, msg: str) -> None:
-        self._w_status.update(msg)
+    def _log(self, msg: str) -> None:
+        self._w_log.write(msg)
 
     def _selected_fragment(self) -> Optional[Fragment]:
         idx = self._w_list.index
@@ -155,27 +218,16 @@ class AudioTUI(App):
             return None
         return self.fragments[idx]
 
-    # --- prompt helpers ---
-
-    def _open_prompt(self, mode: _Prompt, placeholder: str) -> None:
-        self._prompt_mode = mode
-        inp = self._w_prompt
-        inp.placeholder = placeholder
-        inp.value = ""
-        inp.styles.display = "block"
-        inp.focus()
-
-    def _close_prompt(self) -> None:
-        self._prompt_mode = _Prompt.NONE
-        self._w_prompt.styles.display = "none"
-
     # --- actions ---
 
     def action_toggle_play(self) -> None:
         self.player.toggle()
+        if not self.player.playing:
+            self._play_until = None
 
     def action_seek(self, delta: float) -> None:
         self.player.seek(delta)
+        self._play_until = None
 
     def action_speed(self, delta: float) -> None:
         self.player.set_speed(round(self.player.speed + delta, 2))
@@ -183,35 +235,53 @@ class AudioTUI(App):
     def action_mark_in(self) -> None:
         self.in_point = self.player.position
         self._refresh_marks()
+        self._log(f"in = {fmt_time(self.in_point)}")
 
     def action_mark_out(self) -> None:
         if self.in_point is None:
             self.bell(); return
         start, end = self.in_point, self.player.position
         if end <= start:
+            self._log("[yellow]out must be after in[/yellow]")
             self.bell(); return
-        self.fragments.append(Fragment(start, end))
+        frag = Fragment(start, end)
+        self.fragments.append(frag)
         self.fragments.sort(key=lambda f: f.start)
         self.in_point = None
         self._refresh_marks()
         self._refresh_list()
+        self._log(f"+ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_del_fragment(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
             self.bell(); return
         self.fragments.remove(frag)
+        self._undo_stack.append(frag)
         self._refresh_list()
+        self._refresh_marks()
+        self._log(f"– fragment (u to undo)")
+
+    def action_undo_delete(self) -> None:
+        if not self._undo_stack:
+            self.bell(); return
+        frag = self._undo_stack.pop()
+        self.fragments.append(frag)
+        self.fragments.sort(key=lambda f: f.start)
+        self._refresh_list()
+        self._refresh_marks()
+        self._log(f"undo → {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_save(self) -> None:
         if not self.fragments:
+            self._log("[yellow]no fragments to save[/yellow]")
             self.bell(); return
-        self._open_prompt(
-            _Prompt.SAVE_MODE,
-            "save mode: (c)oncat single file  /  (s)eparate files",
-        )
+        self.push_screen(SaveDialog(self.src), self._handle_save)
 
     def action_separate(self) -> None:
+        if self._sep_busy:
+            self._log("[yellow]isolation already in progress — ctrl+k to cancel[/yellow]")
+            self.bell(); return
         frag = self._selected_fragment()
         if frag is not None:
             scope = (
@@ -220,14 +290,21 @@ class AudioTUI(App):
             )
         else:
             scope = "whole file"
-        self._open_prompt(
-            _Prompt.SEP_DESC,
-            f"describe voice to isolate on {scope} (e.g. 'man speaking')",
+        self.push_screen(
+            DescribePrompt(scope=scope, default=self._last_description),
+            lambda value: self._on_describe_initial(value, frag),
         )
+
+    def action_cancel_separation(self) -> None:
+        if not self._sep_busy:
+            self.bell(); return
+        self._sep_generation += 1
+        self._sep_busy = False
+        self._log("[yellow]cancelled — result will be dropped on completion[/yellow]")
 
     def action_open_file(self) -> None:
         if not _HAS_FSPICKER:
-            self._set_status("install textual-fspicker: pip install textual-fspicker")
+            self._log("install textual-fspicker: pip install textual-fspicker")
             self.bell(); return
         filters = Filters(
             ("Audio", lambda p: p.suffix.lower() in _AUDIO_EXTS),
@@ -238,11 +315,20 @@ class AudioTUI(App):
             self._on_file_chosen,
         )
 
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
+
+    def action_quit_app(self) -> None:
+        self.exit()
+
+    # --- file switching ---
+
     def _on_file_chosen(self, path: Optional[Path]) -> None:
         if path is None:
             return
         try:
-            self._set_status(f"loading {path.name} …")
+            self._save_session()
+            self._log(f"loading [b]{path.name}[/b] …")
             new_tmp = Path(tempfile.mkstemp(suffix=".wav")[1])
             ffmpeg.decode_to_wav(path, new_tmp)
             new_player = self._load_player(new_tmp)
@@ -251,89 +337,229 @@ class AudioTUI(App):
             self.player = new_player
             self.src = path
             self.wav_path = new_tmp
+            self._peaks = self._compute_peaks()
             try: old_tmp.unlink()
             except OSError: pass
             self.fragments.clear()
+            self._undo_stack.clear()
             self.in_point = None
+            self._play_until = None
+            self._load_session()
             self._refresh_marks()
             self._refresh_list()
-            self._set_status(self._header_text())
+            self._w_status.update(self._header_text())
+            self._log(f"opened {self.src.name} "
+                      f"({fmt_time(self.player.duration)})")
         except Exception as e:
-            self._set_status(f"open failed: {e}")
+            self._log(f"[red]open failed:[/red] {e}")
 
-    # --- prompt dispatch ---
+    # --- fragment audition ---
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        value = event.value.strip()
-        match self._prompt_mode:
-            case _Prompt.SAVE_MODE:
-                self._handle_save_mode(value)
-            case _Prompt.SAVE_PATH:
-                self._handle_save_path(value)
-            case _Prompt.SEP_DESC:
-                self._handle_sep_desc(value)
-            case _Prompt.NONE:
-                pass
-
-    def _handle_save_mode(self, value: str) -> None:
-        first = value[:1].lower()
-        if first == "c":
-            self._save_mode = "concat"
-            default = self.src.with_name(self.src.stem + "_cut" + self.src.suffix)
-        elif first == "s":
-            self._save_mode = "separate"
-            default = self.src.with_name(self.src.stem + "_cut")
-        else:
-            self.bell(); return
-        self._default_out = str(default)
-        self._open_prompt(
-            _Prompt.SAVE_PATH,
-            f"output path (default: {self._default_out}) — enter to accept",
+    def on_list_view_selected(self, event: ListView.Selected) -> None:  # noqa: ARG002
+        frag = self._selected_fragment()
+        if frag is None:
+            return
+        self.player.seek_to(frag.start)
+        self._play_until = frag.end
+        if not self.player.playing:
+            self.player.toggle()
+        self._log(
+            f"▶ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}"
         )
 
-    def _handle_save_path(self, value: str) -> None:
-        out = Path(value or self._default_out)
-        self._close_prompt()
-        try:
-            if self._save_mode == "concat":
-                ffmpeg.concat_cuts(self.src, self.fragments, out)
-            else:
-                ffmpeg.split_cuts(self.src, self.fragments, out)
-            self._set_status(f"saved → {out}")
-        except Exception as e:
-            self._set_status(f"save failed: {e}")
+    # --- click-to-seek ---
 
-    def _handle_sep_desc(self, value: str) -> None:
-        if not value:
-            self.bell(); return
-        frag = self._selected_fragment()
-        self._close_prompt()
-        self._set_status(f"isolating {value!r} … (this can take a while)")
+    @on(events.Click, "#progress")
+    @on(events.Click, "#waveform")
+    def _seek_click(self, event: events.Click) -> None:
+        width = event.widget.size.width if event.widget else 0
+        dur = self.player.duration
+        if width <= 0 or dur <= 0:
+            return
+        # strip padding: 2 chars on each side per CSS
+        inner_x = event.x - 2
+        inner_w = max(1, width - 4)
+        frac = max(0.0, min(1.0, inner_x / inner_w))
+        self.player.seek_to(frac * dur)
+        self._play_until = None
+
+    # --- save dialog result ---
+
+    def _handle_save(self, request: Optional[SaveRequest]) -> None:
+        if request is None:
+            return
+        try:
+            if request.mode == "concat":
+                ffmpeg.concat_cuts(self.src, self.fragments, request.path)
+            else:
+                ffmpeg.split_cuts(self.src, self.fragments, request.path)
+            self._log(f"[green]saved →[/green] {request.path}")
+        except Exception as e:
+            self._log(f"[red]save failed:[/red] {e}")
+
+    # --- separation flow ---
+
+    def _on_describe_initial(
+        self, description: Optional[str], frag: Optional[Fragment]
+    ) -> None:
+        if not description:
+            self._log("[dim]isolation cancelled[/dim]")
+            return
+        try:
+            mono, sr, tag, out_base = self._prepare_audio(frag)
+        except Exception as e:
+            self._log(f"[red]prepare failed:[/red] {e}")
+            return
+        pending = _PendingSeparation(
+            description=description,
+            mono=mono,
+            sr=sr,
+            tag=tag,
+            out_base=out_base,
+            fragment=frag,
+        )
+        self._start_separation(pending)
+
+    def _prepare_audio(
+        self, frag: Optional[Fragment]
+    ) -> tuple[np.ndarray, int, str, Path]:
+        data, sr = sf.read(str(self.wav_path), dtype="float32", always_2d=True)
+        mono = data.mean(axis=1) if data.shape[1] > 1 else data[:, 0]
+        if frag is not None:
+            mono = slice_mono(mono, sr, frag.start, frag.end)
+            tag = f"frag{self.fragments.index(frag) + 1:02d}"
+        else:
+            tag = "full"
+        out_base = self.src.with_name(f"{self.src.stem}_{tag}")
+        return mono.astype(np.float32), int(sr), tag, out_base
+
+    def _start_separation(self, pending: _PendingSeparation) -> None:
+        self._sep_busy = True
+        self._sep_generation += 1
+        generation = self._sep_generation
+        self._last_description = pending.description
+        self._log(
+            f"isolating [b]{pending.description!r}[/b] on {pending.tag} "
+            f"({fmt_time(pending.mono.shape[0] / pending.sr)}) — "
+            f"[dim]ctrl+k to cancel[/dim]"
+        )
         threading.Thread(
             target=self._run_separation,
-            args=(value, frag),
+            args=(pending, generation),
             daemon=True,
         ).start()
 
-    def _run_separation(self, description: str, frag: Optional[Fragment]) -> None:
+    def _run_separation(
+        self, pending: _PendingSeparation, generation: int
+    ) -> None:
         try:
-            self.call_from_thread(self._set_status, "loading SAM-Audio …")
-            mono, sr = load_mono(self.wav_path)
-            if frag is not None:
-                mono = slice_mono(mono, sr, frag.start, frag.end)
-                tag = f"frag{self.fragments.index(frag) + 1:02d}"
-            else:
-                tag = "full"
-            self.call_from_thread(
-                self._set_status, f"separating {description!r} on {tag} …"
-            )
-            out_base = self.src.with_name(
-                f"{self.src.stem}_{tag}_{_safe_slug(description)}"
-            )
-            result = self.separator.separate(mono, sr, description, out_base)
-            self.call_from_thread(
-                self._set_status,
-                f"isolated → {result.target_path.name} + {result.residual_path.name}",
+            target, residual, target_sr = self.separator.separate_arrays(
+                pending.mono, pending.sr, pending.description
             )
         except Exception as e:
-            self.call_from_thread(self._set_status, f"separate failed: {e}")
+            self.call_from_thread(self._finish_sep_error, generation, str(e))
+            return
+        self.call_from_thread(
+            self._finish_sep_ok, generation, pending, target, residual, target_sr
+        )
+
+    def _finish_sep_error(self, generation: int, err: str) -> None:
+        if generation != self._sep_generation:
+            return  # cancelled — drop
+        self._sep_busy = False
+        self._log(f"[red]isolation failed:[/red] {err}")
+
+    def _finish_sep_ok(
+        self,
+        generation: int,
+        pending: _PendingSeparation,
+        target: np.ndarray,
+        residual: np.ndarray,
+        target_sr: int,
+    ) -> None:
+        if generation != self._sep_generation:
+            self._log("[dim]cancelled result discarded[/dim]")
+            return
+        self._sep_busy = False
+        # pause main player so audio streams don't fight
+        if self.player.playing:
+            self.player.toggle()
+        slug = _safe_slug(pending.description)
+        out_base = pending.out_base.with_name(
+            f"{pending.out_base.name}_{slug}"
+        )
+        data = SeparationResultData(
+            description=pending.description,
+            sample_rate=target_sr,
+            target=target,
+            residual=residual,
+            out_base=out_base,
+        )
+        self.push_screen(
+            SeparationResultScreen(data),
+            lambda decision: self._handle_sep_decision(decision, pending),
+        )
+
+    def _handle_sep_decision(
+        self,
+        decision: Optional[ResultDecision],
+        pending: _PendingSeparation,
+    ) -> None:
+        if decision is None:
+            self._log("[dim]result discarded[/dim]")
+            return
+        if decision.action == "keep" and decision.kept_paths is not None:
+            t, r = decision.kept_paths
+            self._log(f"[green]kept →[/green] {t.name} + {r.name}")
+            return
+        if decision.action == "rerun":
+            self.push_screen(
+                DescribePrompt(
+                    scope=f"same audio ({pending.tag})",
+                    default=pending.description,
+                ),
+                lambda desc: self._on_describe_rerun(desc, pending),
+            )
+
+    def _on_describe_rerun(
+        self,
+        description: Optional[str],
+        pending: _PendingSeparation,
+    ) -> None:
+        if not description:
+            self._log("[dim]re-run cancelled[/dim]")
+            return
+        new_pending = _PendingSeparation(
+            description=description,
+            mono=pending.mono,
+            sr=pending.sr,
+            tag=pending.tag,
+            out_base=pending.out_base,
+            fragment=pending.fragment,
+        )
+        self._start_separation(new_pending)
+
+    # --- session persistence ---
+
+    def _load_session(self) -> None:
+        sess = session.load(self.src)
+        if sess.fragments:
+            self.fragments = list(sess.fragments)
+            self._refresh_list()
+            self._refresh_marks()
+            self._log(
+                f"[dim]loaded {len(sess.fragments)} fragments "
+                f"from {session.sidecar_path(self.src).name}[/dim]"
+            )
+        if sess.last_description:
+            self._last_description = sess.last_description
+
+    def _save_session(self) -> None:
+        sess = session.Session(
+            fragments=list(self.fragments),
+            last_description=self._last_description,
+        )
+        try:
+            session.save(self.src, sess)
+        except OSError:
+            pass

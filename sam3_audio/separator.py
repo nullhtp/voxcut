@@ -38,6 +38,11 @@ def _linear_resample(mono: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return np.interp(x_new, x_old, mono).astype(np.float32)
 
 
+def _save_wav(path: Path, mono: np.ndarray, sr: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(path), mono, sr, subtype="FLOAT")
+
+
 class SamSeparator:
     """Lazy wrapper around the MLX SAM-Audio model."""
 
@@ -67,20 +72,14 @@ class SamSeparator:
         self.load()
         return int(self._model.sample_rate)
 
-    def separate(
+    def separate_arrays(
         self,
         mono: np.ndarray,
         sr: int,
         description: str,
-        out_base: Path,
-    ) -> SeparationResult:
-        """Isolate ``description`` from ``mono`` and write target/residual WAVs.
-
-        ``out_base`` is the basename without suffix — ``_target.wav`` and
-        ``_residual.wav`` are appended.
-        """
+    ) -> tuple[np.ndarray, np.ndarray, int]:
+        """Run separation and return (target, residual, sample_rate) as numpy mono."""
         import mlx.core as mx
-        from mlx_audio.sts.models.sam_audio import save_audio
 
         self.load()
         target_sr = self.sample_rate
@@ -94,9 +93,26 @@ class SamSeparator:
             overlap_seconds=3.0,
             verbose=False,
         )
+        target = np.array(result.target[0], copy=False).astype(np.float32).reshape(-1)
+        residual = np.array(result.residual[0], copy=False).astype(np.float32).reshape(-1)
+        return target, residual, target_sr
 
-        target = out_base.with_name(out_base.name + "_target.wav")
-        residual = out_base.with_name(out_base.name + "_residual.wav")
-        save_audio(result.target[0], str(target), sample_rate=target_sr)
-        save_audio(result.residual[0], str(residual), sample_rate=target_sr)
-        return SeparationResult(target, residual)
+    def separate(
+        self,
+        mono: np.ndarray,
+        sr: int,
+        description: str,
+        out_base: Path,
+    ) -> SeparationResult:
+        """Run separation and write ``<out_base>_target.wav`` / ``_residual.wav``."""
+        target, residual, target_sr = self.separate_arrays(mono, sr, description)
+        target_path = out_base.with_name(out_base.name + "_target.wav")
+        residual_path = out_base.with_name(out_base.name + "_residual.wav")
+        _save_wav(target_path, target, target_sr)
+        _save_wav(residual_path, residual, target_sr)
+        return SeparationResult(target_path, residual_path)
+
+
+def save_wav(path: Path, mono: np.ndarray, sr: int) -> None:
+    """Public helper: write mono float32 data as a float WAV."""
+    _save_wav(path, mono, sr)

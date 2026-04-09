@@ -38,18 +38,35 @@ uv run sam3-audio alex.mp3
 
 ### TUI controls
 
-| Key            | Action                                           |
-| -------------- | ------------------------------------------------ |
-| `space`        | play / pause                                     |
-| `← / →`        | seek ±5s                                         |
-| `shift+← / →`  | seek ±1s                                         |
-| `- / +`        | speed 0.5× .. 2.0×                               |
-| `i` / `o`      | mark in / out point (adds fragment)              |
-| `x`            | delete selected fragment                         |
-| `s`            | save fragments (concat or separate files)       |
-| `d`            | isolate voice on selection or whole file        |
-| `f`            | open another file                                |
-| `q`            | quit                                             |
+Press `?` any time for the in-app help.
+
+| Key              | Action                                                    |
+| ---------------- | --------------------------------------------------------- |
+| `space`          | play / pause                                              |
+| `← / →`          | seek ±5s                                                  |
+| `shift+← / →`    | seek ±1s                                                  |
+| `- / +`          | speed 0.5× .. 2.0×                                        |
+| click bar        | seek to clicked position (progress bar or waveform)       |
+| `i` / `o`        | mark in / out point (adds fragment)                       |
+| `enter`          | play selected fragment (auto-stops at out-point)          |
+| `x` / `u`        | delete selected fragment / undo last delete               |
+| `s`              | save fragments (modal: concat or separate files)          |
+| `d`              | isolate voice on selection or whole file                  |
+| `ctrl+k`         | cancel in-flight isolation (result is dropped)            |
+| `f`              | open another file                                         |
+| `?`              | help overlay                                              |
+| `q`              | quit                                                      |
+
+### Separation result screen
+
+After `d` finishes you land in an audition modal: `t` plays the isolated
+target, `r` plays the residual, `space` stops, `k` keeps (writes WAVs to disk),
+`shift+r` re-runs with a different description, `esc` discards.
+
+### Session persistence
+
+Fragments and the last-used description auto-save to `<input>.sam3.json`
+next to the audio file and reload the next time you open it.
 
 ## Layout
 
@@ -59,7 +76,10 @@ sam3_audio/
   fragment.py    Fragment value object
   ffmpeg.py      decode / cut / concat / split helpers
   player.py      numpy-backed audio player
+  waveform.py    peak-strip waveform rendering
   separator.py   SAM-Audio (MLX) service
+  session.py     sidecar JSON persistence
   tui.py         Textual application
   cli.py         entry points
+  screens/       modal dialogs: help, describe, save, result
 ```
