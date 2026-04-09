@@ -1,0 +1,104 @@
+"""Numpy-backed audio player with seek and speed control."""
+from __future__ import annotations
+
+import threading
+from typing import Optional
+
+import numpy as np
+import sounddevice as sd
+
+
+class Player:
+    """Plays a numpy buffer via sounddevice. Speed resamples the output stream
+    (and therefore shifts pitch — fine for scrubbing)."""
+
+    MIN_SPEED = 0.5
+    MAX_SPEED = 2.0
+
+    def __init__(self, data: np.ndarray, samplerate: int):
+        if data.ndim == 1:
+            data = data[:, None]
+        self.data = data.astype(np.float32, copy=False)
+        self.sr = int(samplerate)
+        self.channels = self.data.shape[1]
+        self.frame = 0
+        self.speed = 1.0
+        self.playing = False
+        self._lock = threading.Lock()
+        self.stream: Optional[sd.OutputStream] = None
+        self._open_stream()
+
+    # --- stream lifecycle ---
+
+    def _open_stream(self) -> None:
+        self._close_stream()
+        self.stream = sd.OutputStream(
+            samplerate=int(self.sr * self.speed),
+            channels=self.channels,
+            dtype="float32",
+            callback=self._callback,
+        )
+
+    def _close_stream(self) -> None:
+        if self.stream is None:
+            return
+        try:
+            self.stream.stop()
+            self.stream.close()
+        except Exception:
+            pass
+        self.stream = None
+
+    def _callback(self, outdata, frames, time_info, status) -> None:  # noqa: ARG002
+        with self._lock:
+            if not self.playing:
+                outdata[:] = 0
+                return
+            end = self.frame + frames
+            chunk = self.data[self.frame:end]
+            n = chunk.shape[0]
+            outdata[:n] = chunk
+            if n < frames:
+                outdata[n:] = 0
+                self.playing = False
+            self.frame = min(end, self.data.shape[0])
+
+    # --- state ---
+
+    @property
+    def duration(self) -> float:
+        return self.data.shape[0] / self.sr
+
+    @property
+    def position(self) -> float:
+        return self.frame / self.sr
+
+    def toggle(self) -> None:
+        with self._lock:
+            self.playing = not self.playing
+        (self.stream.start if self.playing else self.stream.stop)()
+
+    def seek(self, delta: float) -> None:
+        with self._lock:
+            self.frame = max(
+                0,
+                min(self.data.shape[0] - 1, self.frame + int(delta * self.sr)),
+            )
+
+    def set_speed(self, speed: float) -> None:
+        speed = max(self.MIN_SPEED, min(self.MAX_SPEED, speed))
+        was_playing = self.playing
+        with self._lock:
+            self.playing = False
+        self._close_stream()
+        self.speed = speed
+        self._open_stream()
+        if was_playing:
+            with self._lock:
+                self.playing = True
+            self.stream.start()
+
+    def close(self) -> None:
+        with self._lock:
+            self.playing = False
+        self._close_stream()
