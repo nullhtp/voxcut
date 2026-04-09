@@ -56,6 +56,10 @@ def _safe_slug(text: str, limit: int = 32) -> str:
     return "".join(c if c.isalnum() else "_" for c in text)[:limit]
 
 
+class _CancelledSeparation(Exception):
+    """Raised from the progress callback to hard-abort an in-flight run."""
+
+
 @dataclass
 class _PendingSeparation:
     """Context carried across describe → run → result → optional rerun."""
@@ -74,9 +78,12 @@ class AudioTUI(App):
     #progress { height: 1; padding: 0 2; color: $accent; }
     #waveform { height: 1; padding: 0 2; }
     #marks { height: 1; padding: 0 2; color: $text-muted; }
+    #sep_progress { height: 1; padding: 0 2; color: $warning; display: none; }
     #list { height: 1fr; border: tall $primary; }
     #log { height: 6; border: tall $accent-lighten-1; }
     """
+
+    SEP_BAR_WIDTH = 30
 
     BINDINGS = [
         Binding("space", "toggle_play", "play/pause"),
@@ -144,6 +151,7 @@ class AudioTUI(App):
         yield Static("", id="progress")
         yield Static("", id="waveform")
         yield Static("", id="marks")
+        yield Static("", id="sep_progress")
         yield ListView(id="list")
         log = RichLog(id="log", highlight=False, markup=True, wrap=True)
         log.can_focus = False
@@ -202,6 +210,9 @@ class AudioTUI(App):
     def _w_list(self) -> ListView: return self.query_one("#list", ListView)
     @property
     def _w_log(self) -> RichLog: return self.query_one("#log", RichLog)
+    @property
+    def _w_sep_progress(self) -> Static:
+        return self.query_one("#sep_progress", Static)
 
     # --- view helpers ---
 
@@ -347,7 +358,8 @@ class AudioTUI(App):
             self.bell(); return
         self._sep_generation += 1
         self._sep_busy = False
-        self._log("[yellow]cancelled — result will be dropped on completion[/yellow]")
+        self._hide_sep_progress()
+        self._log("[yellow]cancelling isolation…[/yellow]")
 
     def action_open_file(self) -> None:
         if not _HAS_FSPICKER:
@@ -489,11 +501,12 @@ class AudioTUI(App):
         self._sep_generation += 1
         generation = self._sep_generation
         self._last_description = pending.description
+        total_s = pending.mono.shape[0] / pending.sr
         self._log(
             f"isolating [b]{pending.description!r}[/b] on {pending.tag} "
-            f"({fmt_time(pending.mono.shape[0] / pending.sr)}) — "
-            f"[dim]ctrl+k to cancel[/dim]"
+            f"({fmt_time(total_s)}) — [dim]ctrl+k to cancel[/dim]"
         )
+        self._update_sep_progress(0.0, total_s, generation)
         threading.Thread(
             target=self._run_separation,
             args=(pending, generation),
@@ -503,10 +516,23 @@ class AudioTUI(App):
     def _run_separation(
         self, pending: _PendingSeparation, generation: int
     ) -> None:
+        def progress_cb(done_s: float, total_s: float) -> None:
+            if generation != self._sep_generation:
+                raise _CancelledSeparation
+            self.call_from_thread(
+                self._update_sep_progress, done_s, total_s, generation
+            )
+
         try:
             target, residual, target_sr = self.separator.separate_arrays(
-                pending.mono, pending.sr, pending.description
+                pending.mono,
+                pending.sr,
+                pending.description,
+                progress_cb=progress_cb,
             )
+        except _CancelledSeparation:
+            self.call_from_thread(self._finish_sep_cancelled, generation)
+            return
         except Exception as e:
             self.call_from_thread(self._finish_sep_error, generation, str(e))
             return
@@ -514,10 +540,36 @@ class AudioTUI(App):
             self._finish_sep_ok, generation, pending, target, residual, target_sr
         )
 
+    def _update_sep_progress(
+        self, done_s: float, total_s: float, generation: int
+    ) -> None:
+        if generation != self._sep_generation:
+            return
+        frac = min(1.0, done_s / total_s) if total_s > 0 else 0.0
+        filled = int(self.SEP_BAR_WIDTH * frac)
+        bar = "█" * filled + "░" * (self.SEP_BAR_WIDTH - filled)
+        pct = int(frac * 100)
+        self._w_sep_progress.update(
+            f"[b]isolating[/b] {bar} {pct:3d}%   "
+            f"{done_s:5.1f}s / {total_s:5.1f}s   "
+            f"[dim]ctrl+k to cancel[/dim]"
+        )
+        self._w_sep_progress.styles.display = "block"
+
+    def _hide_sep_progress(self) -> None:
+        self._w_sep_progress.update("")
+        self._w_sep_progress.styles.display = "none"
+
+    def _finish_sep_cancelled(self, generation: int) -> None:
+        if generation == self._sep_generation:
+            self._hide_sep_progress()
+        self._log("[yellow]isolation cancelled[/yellow]")
+
     def _finish_sep_error(self, generation: int, err: str) -> None:
         if generation != self._sep_generation:
             return  # cancelled — drop
         self._sep_busy = False
+        self._hide_sep_progress()
         self._log(f"[red]isolation failed:[/red] {err}")
 
     def _finish_sep_ok(
@@ -532,6 +584,7 @@ class AudioTUI(App):
             self._log("[dim]cancelled result discarded[/dim]")
             return
         self._sep_busy = False
+        self._hide_sep_progress()
         # pause main player so audio streams don't fight
         if self.player.playing:
             self.player.toggle()
