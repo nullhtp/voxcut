@@ -100,14 +100,19 @@ class AudioTUI(App):
 
     position = reactive(0.0)
 
-    def __init__(self, src: Path, wav: Path, separator: SamSeparator):
+    def __init__(
+        self,
+        src: Optional[Path],
+        wav: Optional[Path],
+        separator: SamSeparator,
+    ):
         super().__init__()
-        self.src = src
-        self.wav_path = wav
+        self.src: Optional[Path] = src
+        self.wav_path: Optional[Path] = wav
         self.separator = separator
         self.fragments: list[Fragment] = []
         self.in_point: Optional[float] = None
-        self.player = self._load_player(wav)
+        self.player = self._load_player(wav) if wav is not None else self._silent_player()
         self._peaks = self._compute_peaks()
         self._last_description = ""
         self._undo_stack: list[Fragment] = []
@@ -121,6 +126,10 @@ class AudioTUI(App):
     def _load_player(wav: Path) -> Player:
         data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
         return Player(data, sr)
+
+    @staticmethod
+    def _silent_player() -> Player:
+        return Player(np.zeros((1, 1), dtype=np.float32), 44100)
 
     def _compute_peaks(self) -> np.ndarray:
         data = self.player.data
@@ -145,14 +154,39 @@ class AudioTUI(App):
         self.set_interval(0.1, self._tick)
         self._refresh_marks()
         self._refresh_list()
+        if self.src is None:
+            self._log("no file loaded — [b]f[/b] to open, [b]?[/b] for help")
+            self.call_after_refresh(self._prompt_initial_file)
+            return
         self._load_session()
-        self._log(f"[dim]opened[/dim] {self.src.name} "
-                  f"([dim]{fmt_time(self.player.duration)}[/dim])")
+        self._log(
+            f"[dim]opened[/dim] {self.src.name} "
+            f"([dim]{fmt_time(self.player.duration)}[/dim])"
+        )
         self._log("press [b]?[/b] for help")
 
     def on_unmount(self) -> None:
         self._save_session()
         self.player.close()
+
+    def _prompt_initial_file(self) -> None:
+        if not _HAS_FSPICKER:
+            self._log("[red]no file given and textual-fspicker is missing[/red]")
+            return
+        filters = Filters(
+            ("Audio", lambda p: p.suffix.lower() in _AUDIO_EXTS),
+            ("All", lambda p: True),
+        )
+        self.push_screen(
+            FileOpen(location=str(Path.cwd()), filters=filters),
+            self._on_initial_file_chosen,
+        )
+
+    def _on_initial_file_chosen(self, path: Optional[Path]) -> None:
+        if path is None:
+            self.exit()
+            return
+        self._on_file_chosen(path)
 
     # --- widget accessors ---
 
@@ -172,10 +206,19 @@ class AudioTUI(App):
     # --- view helpers ---
 
     def _header_text(self) -> str:
+        if self.src is None:
+            return "No file loaded — press f to open"
         return (
             f"File: {self.src.name}   "
             f"duration: {fmt_time(self.player.duration)}"
         )
+
+    def _require_file(self) -> bool:
+        if self.src is None:
+            self._log("[yellow]no file loaded — press f to open[/yellow]")
+            self.bell()
+            return False
+        return True
 
     def _tick(self) -> None:
         self.position = self.player.position
@@ -273,12 +316,16 @@ class AudioTUI(App):
         self._log(f"undo → {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_save(self) -> None:
+        if not self._require_file():
+            return
         if not self.fragments:
             self._log("[yellow]no fragments to save[/yellow]")
             self.bell(); return
         self.push_screen(SaveDialog(self.src), self._handle_save)
 
     def action_separate(self) -> None:
+        if not self._require_file():
+            return
         if self._sep_busy:
             self._log("[yellow]isolation already in progress — ctrl+k to cancel[/yellow]")
             self.bell(); return
@@ -310,8 +357,9 @@ class AudioTUI(App):
             ("Audio", lambda p: p.suffix.lower() in _AUDIO_EXTS),
             ("All", lambda p: True),
         )
+        location = str(self.src.parent) if self.src is not None else str(Path.cwd())
         self.push_screen(
-            FileOpen(location=str(self.src.parent), filters=filters),
+            FileOpen(location=location, filters=filters),
             self._on_file_chosen,
         )
 
@@ -327,7 +375,8 @@ class AudioTUI(App):
         if path is None:
             return
         try:
-            self._save_session()
+            if self.src is not None:
+                self._save_session()
             self._log(f"loading [b]{path.name}[/b] …")
             new_tmp = Path(tempfile.mkstemp(suffix=".wav")[1])
             ffmpeg.decode_to_wav(path, new_tmp)
@@ -338,8 +387,9 @@ class AudioTUI(App):
             self.src = path
             self.wav_path = new_tmp
             self._peaks = self._compute_peaks()
-            try: old_tmp.unlink()
-            except OSError: pass
+            if old_tmp is not None:
+                try: old_tmp.unlink()
+                except OSError: pass
             self.fragments.clear()
             self._undo_stack.clear()
             self.in_point = None
@@ -348,8 +398,9 @@ class AudioTUI(App):
             self._refresh_marks()
             self._refresh_list()
             self._w_status.update(self._header_text())
-            self._log(f"opened {self.src.name} "
-                      f"({fmt_time(self.player.duration)})")
+            self._log(
+                f"opened {self.src.name} ({fmt_time(self.player.duration)})"
+            )
         except Exception as e:
             self._log(f"[red]open failed:[/red] {e}")
 
@@ -542,6 +593,8 @@ class AudioTUI(App):
     # --- session persistence ---
 
     def _load_session(self) -> None:
+        if self.src is None:
+            return
         sess = session.load(self.src)
         if sess.fragments:
             self.fragments = list(sess.fragments)
@@ -555,6 +608,8 @@ class AudioTUI(App):
             self._last_description = sess.last_description
 
     def _save_session(self) -> None:
+        if self.src is None:
+            return
         sess = session.Session(
             fragments=list(self.fragments),
             last_description=self._last_description,

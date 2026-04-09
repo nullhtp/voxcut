@@ -33,7 +33,8 @@ Writes `<stem>_target.wav` (isolated voice) and `<stem>_residual.wav`
 Launch the TUI:
 
 ```bash
-uv run sam3-audio alex.mp3
+uv run sam3-audio alex.mp3    # with a file
+uv run sam3-audio             # no arg — picker opens on startup
 ```
 
 ### TUI controls

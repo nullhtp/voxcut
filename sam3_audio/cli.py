@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from . import ffmpeg
 from .separator import SAM_REPO, SamSeparator, load_mono
@@ -26,10 +27,14 @@ def tui_main() -> None:
         prog="sam3-audio",
         description="Play audio, cut fragments, and isolate voices with SAM-Audio.",
     )
-    ap.add_argument("input", type=Path, help="input audio file")
+    ap.add_argument(
+        "input", type=Path, nargs="?",
+        help="input audio file (optional — picker opens if omitted)",
+    )
     args = ap.parse_args()
 
-    _require(args.input.exists(), f"no such file: {args.input}")
+    if args.input is not None:
+        _require(args.input.exists(), f"no such file: {args.input}")
     _require_ffmpeg()
 
     # Pre-load SAM-Audio *before* Textual patches stdio: huggingface_hub's
@@ -43,13 +48,16 @@ def tui_main() -> None:
     except Exception as e:
         print(f"(SAM-Audio preload failed: {e} — 'd' key will be disabled)")
 
-    tmp = Path(tempfile.mkstemp(suffix=".wav")[1])
+    tmp: Optional[Path] = None
     try:
-        ffmpeg.decode_to_wav(args.input, tmp)
+        if args.input is not None:
+            tmp = Path(tempfile.mkstemp(suffix=".wav")[1])
+            ffmpeg.decode_to_wav(args.input, tmp)
         AudioTUI(args.input, tmp, separator).run()
     finally:
-        try: tmp.unlink()
-        except OSError: pass
+        if tmp is not None:
+            try: tmp.unlink()
+            except OSError: pass
 
 
 def separate_main() -> None:
