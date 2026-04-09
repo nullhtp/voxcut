@@ -1,11 +1,16 @@
 """SAM-Audio (MLX) voice separation service."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import soundfile as sf
+
+ProgressCallback = Callable[[float, float], None]
+"""``(done_seconds, total_seconds)`` — may raise to abort separation."""
 
 SAM_REPO = "mlx-community/sam-audio-large-fp16"
 
@@ -77,8 +82,15 @@ class SamSeparator:
         mono: np.ndarray,
         sr: int,
         description: str,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> tuple[np.ndarray, np.ndarray, int]:
-        """Run separation and return (target, residual, sample_rate) as numpy mono."""
+        """Run separation and return (target, residual, sample_rate) as numpy mono.
+
+        Uses ``separate_streaming`` under the hood so progress can be reported
+        per chunk. ``progress_cb`` is invoked as ``(done_seconds, total_seconds)``
+        and may raise to abort the run — the exception propagates out unchanged
+        so callers can use a sentinel for cancellation.
+        """
         import mlx.core as mx
 
         self.load()
@@ -86,15 +98,41 @@ class SamSeparator:
         mono = _linear_resample(mono.astype(np.float32), sr, target_sr)
         audio_arr = mx.array(mono)[None, None, :]
 
-        result = self._model.separate_long(
+        total_samples = audio_arr.shape[2]
+        total_seconds = total_samples / target_sr
+
+        target_pieces: list[np.ndarray] = []
+        residual_pieces: list[np.ndarray] = []
+        samples_done = 0
+
+        if progress_cb is not None:
+            progress_cb(0.0, total_seconds)
+
+        for chunk in self._model.separate_streaming(
             audios=audio_arr,
             descriptions=[description],
             chunk_seconds=10.0,
             overlap_seconds=3.0,
             verbose=False,
+        ):
+            tgt = np.array(chunk.target, copy=False).astype(np.float32).reshape(-1)
+            res = np.array(chunk.residual, copy=False).astype(np.float32).reshape(-1)
+            target_pieces.append(tgt)
+            residual_pieces.append(res)
+            samples_done += tgt.shape[0]
+            if progress_cb is not None:
+                progress_cb(samples_done / target_sr, total_seconds)
+
+        target = (
+            np.concatenate(target_pieces)
+            if target_pieces
+            else np.zeros(0, dtype=np.float32)
         )
-        target = np.array(result.target[0], copy=False).astype(np.float32).reshape(-1)
-        residual = np.array(result.residual[0], copy=False).astype(np.float32).reshape(-1)
+        residual = (
+            np.concatenate(residual_pieces)
+            if residual_pieces
+            else np.zeros(0, dtype=np.float32)
+        )
         return target, residual, target_sr
 
     def separate(
