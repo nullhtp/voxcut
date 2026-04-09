@@ -1,0 +1,17 @@
+[project]
+name = "sam3-audio"
+version = "0.1.0"
+description = "Voice isolation and audio fragment cutting TUI powered by SAM-Audio (MLX)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx-audio",
+    "numpy",
+    "sounddevice",
+    "soundfile",
+    "textual",
+    "textual-fspicker",
+]
+
+[tool.uv]
+# Apple Silicon only — mlx-audio requires MLX.

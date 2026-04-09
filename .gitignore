@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+
+# Audio artifacts
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
