@@ -12,3 +12,6 @@ __pycache__/
 *.flac
 *.m4a
 *.ogg
+
+# Per-file session sidecars
+*.sam3.json
