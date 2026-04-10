@@ -129,6 +129,7 @@ class AudioTUI(App):
         self._description_history: list[str] = []
         self._undo_stack: list[Fragment] = []
         self._play_until: Optional[float] = None
+        self._playing_frag_idx: int | None = None
         self._sep_busy = False
         self._sep_generation = 0
 
@@ -262,6 +263,8 @@ class AudioTUI(App):
             if self.player.playing:
                 self.player.toggle()
             self._play_until = None
+            self._playing_frag_idx = None
+            self._refresh_list()
 
         filled = int(_PROGRESS_BAR_WIDTH * (pos / dur)) if dur else 0
         bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
@@ -290,7 +293,8 @@ class AudioTUI(App):
         prev = select if select is not None else lv.index
         lv.clear()
         for i, frag in enumerate(self.fragments):
-            lv.append(ListItem(Label(frag.label(i))))
+            prefix = "▶" if i == self._playing_frag_idx else " "
+            lv.append(ListItem(Label(f"{prefix}{frag.label(i)}")))
         if self.fragments and prev is not None:
             lv.index = min(prev, len(self.fragments) - 1)
 
@@ -309,10 +313,16 @@ class AudioTUI(App):
         self.player.toggle()
         if not self.player.playing:
             self._play_until = None
+            if self._playing_frag_idx is not None:
+                self._playing_frag_idx = None
+                self._refresh_list()
 
     def action_seek(self, delta: float) -> None:
         self.player.seek(delta)
         self._play_until = None
+        if self._playing_frag_idx is not None:
+            self._playing_frag_idx = None
+            self._refresh_list()
 
     def action_speed(self, delta: float) -> None:
         self.player.set_speed(round(self.player.speed + delta, 2))
@@ -484,8 +494,10 @@ class AudioTUI(App):
             return
         self.player.seek_to(frag.start)
         self._play_until = frag.end
+        self._playing_frag_idx = self.fragments.index(frag)
         if not self.player.playing:
             self.player.toggle()
+        self._refresh_list()
         self._log(
             f"▶ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}"
         )
