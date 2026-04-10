@@ -326,6 +326,7 @@ class AudioTUI(App):
 
     def action_speed(self, delta: float) -> None:
         self.player.set_speed(round(self.player.speed + delta, 2))
+        self._log(f"speed → {self.player.speed:.1f}x")
 
     def action_mark_in(self) -> None:
         self.in_point = self.player.position
