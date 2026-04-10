@@ -27,6 +27,7 @@ from . import ffmpeg, session, waveform
 from .fragment import Fragment
 from .player import Player
 from .screens import (
+    ConfirmScreen,
     DescribePrompt,
     HelpScreen,
     ResultDecision,
@@ -141,6 +142,7 @@ class AudioTUI(App):
         self._undo_stack: list[Fragment] = []
         self._play_until: Optional[float] = None
         self._playing_frag_idx: int | None = None
+        self._dirty = False
         self._sep_busy = False
         self._sep_generation = 0
 
@@ -338,6 +340,9 @@ class AudioTUI(App):
         if self.fragments and prev is not None:
             lv.index = min(prev, len(self.fragments) - 1)
 
+    def _mark_dirty(self) -> None:
+        self._dirty = True
+
     def _log(self, msg: str) -> None:
         self._w_log.write(msg)
 
@@ -386,6 +391,7 @@ class AudioTUI(App):
         self.fragments.sort(key=lambda f: f.start)
         new_idx = self.fragments.index(frag)
         self.in_point = None
+        self._mark_dirty()
         self._refresh_marks()
         self._refresh_list(select=new_idx)
 
@@ -395,6 +401,7 @@ class AudioTUI(App):
             self.bell(); return
         self.fragments.remove(frag)
         self._undo_stack.append(frag)
+        self._mark_dirty()
         self._refresh_list()
         self._refresh_marks()
 
@@ -404,6 +411,7 @@ class AudioTUI(App):
         frag = self._undo_stack.pop()
         self.fragments.append(frag)
         self.fragments.sort(key=lambda f: f.start)
+        self._mark_dirty()
         self._refresh_list()
         self._refresh_marks()
 
@@ -419,6 +427,7 @@ class AudioTUI(App):
         left = Fragment(frag.start, pos)
         right = Fragment(pos, frag.end)
         self.fragments[idx:idx + 1] = [left, right]
+        self._mark_dirty()
         self._refresh_list(select=idx)
         self._refresh_marks()
         self._log(
@@ -435,6 +444,7 @@ class AudioTUI(App):
         b = self.fragments[idx + 1]
         merged = Fragment(min(a.start, b.start), max(a.end, b.end))
         self.fragments[idx:idx + 2] = [merged]
+        self._mark_dirty()
         self._refresh_list(select=idx)
         self._refresh_marks()
         self._log(
@@ -460,6 +470,7 @@ class AudioTUI(App):
             self.bell(); return
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(new_start, frag.end)
+        self._mark_dirty()
         self._refresh_list()
         self._preview_around(new_start)
 
@@ -472,6 +483,7 @@ class AudioTUI(App):
             self.bell(); return
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(frag.start, new_end)
+        self._mark_dirty()
         self._refresh_list()
         self._preview_around(new_end)
 
@@ -652,6 +664,21 @@ class AudioTUI(App):
         if not _HAS_FSPICKER:
             self._log("install textual-fspicker: pip install textual-fspicker")
             self.bell(); return
+        if self._dirty and self.fragments:
+            self.push_screen(
+                ConfirmScreen(
+                    f"You have {len(self.fragments)} unsaved fragment(s). Open new file?"
+                ),
+                self._on_confirm_open,
+            )
+            return
+        self._do_open_file()
+
+    def _on_confirm_open(self, confirmed: bool) -> None:
+        if confirmed:
+            self._do_open_file()
+
+    def _do_open_file(self) -> None:
         filters = Filters(
             ("Audio", lambda p: p.suffix.lower() in _AUDIO_EXTS),
             ("All", lambda p: True),
@@ -666,7 +693,19 @@ class AudioTUI(App):
         self.push_screen(HelpScreen())
 
     def action_quit_app(self) -> None:
+        if self._dirty and self.fragments:
+            self.push_screen(
+                ConfirmScreen(
+                    f"You have {len(self.fragments)} unsaved fragment(s). Quit anyway?"
+                ),
+                self._on_confirm_quit,
+            )
+            return
         self.exit()
+
+    def _on_confirm_quit(self, confirmed: bool) -> None:
+        if confirmed:
+            self.exit()
 
     # --- file switching ---
 
@@ -693,6 +732,7 @@ class AudioTUI(App):
             self._undo_stack.clear()
             self.in_point = None
             self._play_until = None
+            self._dirty = False
             self._load_session()
             self._refresh_marks()
             self._refresh_list()
@@ -765,6 +805,7 @@ class AudioTUI(App):
                 ffmpeg.split_cuts(
                     self.src, self.fragments, request.path, out_ext=out_ext,
                 )
+            self._dirty = False
             self._log(f"[green]saved →[/green] {request.path}")
         except Exception as e:
             self._log(f"[red]save failed:[/red] {e}")
