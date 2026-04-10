@@ -669,11 +669,16 @@ class AudioTUI(App):
     def _handle_save(self, request: Optional[SaveRequest]) -> None:
         if request is None:
             return
+        out_ext = None if request.format == "same" else request.format
         try:
             if request.mode == "concat":
-                ffmpeg.concat_cuts(self.src, self.fragments, request.path)
+                ffmpeg.concat_cuts(
+                    self.src, self.fragments, request.path, out_ext=out_ext,
+                )
             else:
-                ffmpeg.split_cuts(self.src, self.fragments, request.path)
+                ffmpeg.split_cuts(
+                    self.src, self.fragments, request.path, out_ext=out_ext,
+                )
             self._log(f"[green]saved →[/green] {request.path}")
         except Exception as e:
             self._log(f"[red]save failed:[/red] {e}")
