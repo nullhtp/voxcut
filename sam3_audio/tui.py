@@ -49,7 +49,7 @@ _AUDIO_EXTS = {
     ".opus", ".aac", ".wma", ".aiff",
 }
 _PROGRESS_BAR_WIDTH = 40
-_WAVEFORM_WIDTH = 80
+_WAVEFORM_DEFAULT_WIDTH = 80
 
 
 def _safe_slug(text: str, limit: int = 32) -> str:
@@ -143,10 +143,18 @@ class AudioTUI(App):
     def _silent_player() -> Player:
         return Player(np.zeros((1, 1), dtype=np.float32), 44100)
 
+    def _waveform_width(self) -> int:
+        try:
+            w = self._w_waveform.size.width
+            # subtract CSS padding (0 2 = 2 chars each side)
+            return max(10, w - 4) if w > 4 else _WAVEFORM_DEFAULT_WIDTH
+        except Exception:
+            return _WAVEFORM_DEFAULT_WIDTH
+
     def _compute_peaks(self) -> np.ndarray:
         data = self.player.data
         mono = data.mean(axis=1) if data.shape[1] > 1 else data[:, 0]
-        return waveform.compute_peaks(mono, _WAVEFORM_WIDTH)
+        return waveform.compute_peaks(mono, self._waveform_width())
 
     # --- layout ---
 
@@ -167,6 +175,7 @@ class AudioTUI(App):
         self.set_interval(0.1, self._tick)
         self._refresh_marks()
         self._refresh_list()
+        self.call_after_refresh(self._recompute_peaks_if_needed)
         if self.src is None:
             self._log("no file loaded — [b]f[/b] to open, [b]?[/b] for help")
             self.call_after_refresh(self._prompt_initial_file)
@@ -177,6 +186,14 @@ class AudioTUI(App):
             f"([dim]{fmt_time(self.player.duration)}[/dim])"
         )
         self._log("press [b]?[/b] for help")
+
+    def on_resize(self, event: events.Resize) -> None:  # noqa: ARG002
+        self._recompute_peaks_if_needed()
+
+    def _recompute_peaks_if_needed(self) -> None:
+        new_w = self._waveform_width()
+        if self._peaks.shape[0] != new_w:
+            self._peaks = self._compute_peaks()
 
     def on_unmount(self) -> None:
         self._save_session()
