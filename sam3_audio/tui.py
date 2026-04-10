@@ -97,6 +97,10 @@ class AudioTUI(App):
         Binding("o", "mark_out", "mark out"),
         Binding("x", "del_fragment", "delete"),
         Binding("u", "undo_delete", "undo"),
+        Binding("left_square_bracket", "nudge_start(-0.1)", "in ←"),
+        Binding("right_square_bracket", "nudge_end(0.1)", "out →"),
+        Binding("left_curly_bracket", "nudge_start(0.1)", "in →"),
+        Binding("right_curly_bracket", "nudge_end(-0.1)", "out ←"),
         Binding("s", "save", "save cuts"),
         Binding("d", "separate", "isolate voice"),
         Binding("ctrl+k", "cancel_separation", "cancel isolation"),
@@ -257,11 +261,14 @@ class AudioTUI(App):
             f"in: {ip}    ({len(self.fragments)} fragments — enter to play, ? for help)"
         )
 
-    def _refresh_list(self) -> None:
+    def _refresh_list(self, select: int | None = None) -> None:
         lv = self._w_list
+        prev = select if select is not None else lv.index
         lv.clear()
         for i, frag in enumerate(self.fragments):
             lv.append(ListItem(Label(frag.label(i))))
+        if self.fragments and prev is not None:
+            lv.index = min(prev, len(self.fragments) - 1)
 
     def _log(self, msg: str) -> None:
         self._w_log.write(msg)
@@ -301,9 +308,10 @@ class AudioTUI(App):
         frag = Fragment(start, end)
         self.fragments.append(frag)
         self.fragments.sort(key=lambda f: f.start)
+        new_idx = self.fragments.index(frag)
         self.in_point = None
         self._refresh_marks()
-        self._refresh_list()
+        self._refresh_list(select=new_idx)
         self._log(f"+ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_del_fragment(self) -> None:
@@ -325,6 +333,30 @@ class AudioTUI(App):
         self._refresh_list()
         self._refresh_marks()
         self._log(f"undo → {fmt_time(frag.start)} → {fmt_time(frag.end)}")
+
+    def action_nudge_start(self, delta: float) -> None:
+        frag = self._selected_fragment()
+        if frag is None:
+            self.bell(); return
+        new_start = max(0.0, frag.start + delta)
+        if new_start >= frag.end:
+            self.bell(); return
+        idx = self.fragments.index(frag)
+        self.fragments[idx] = Fragment(new_start, frag.end)
+        self._refresh_list()
+        self._log(f"in → {fmt_time(new_start)}")
+
+    def action_nudge_end(self, delta: float) -> None:
+        frag = self._selected_fragment()
+        if frag is None:
+            self.bell(); return
+        new_end = min(self.player.duration, frag.end + delta)
+        if new_end <= frag.start:
+            self.bell(); return
+        idx = self.fragments.index(frag)
+        self.fragments[idx] = Fragment(frag.start, new_end)
+        self._refresh_list()
+        self._log(f"out → {fmt_time(new_end)}")
 
     def action_save(self) -> None:
         if not self._require_file():
