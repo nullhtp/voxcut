@@ -60,8 +60,8 @@ class HelpScreen(ModalScreen[None]):
         with Vertical():
             yield Static(_HELP)
 
-    def on_key(self, event: events.Key) -> None:  # noqa: ARG002
+    def on_key(self, event: events.Key) -> None:
         self.dismiss()
 
-    def on_click(self, event: events.Click) -> None:  # noqa: ARG002
+    def on_click(self, event: events.Click) -> None:
         self.dismiss()

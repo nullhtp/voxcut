@@ -1,7 +1,7 @@
 """Precomputed peak-waveform strip, rendered as Rich text."""
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from rich.text import Text
@@ -42,7 +42,7 @@ def render(
     cursor_frac: float,
     duration: float = 0.0,
     fragments: Sequence[tuple[float, float]] = (),
-    in_point: Optional[float] = None,
+    in_point: float | None = None,
     cursor_sec: float = 0.0,
 ) -> Text:
     """Render the waveform strip with overlays.
@@ -81,6 +81,6 @@ def render(
 
     text = Text()
     for i, p in enumerate(peaks):
-        ch = _BLOCKS[int(round(float(p) * levels))]
+        ch = _BLOCKS[round(float(p) * levels)]
         text.append(ch, style=styles[i])
     return text

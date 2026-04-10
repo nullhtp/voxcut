@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -37,7 +36,7 @@ def slice_mono(mono: np.ndarray, sr: int, start: float, end: float) -> np.ndarra
 def _linear_resample(mono: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     if sr_in == sr_out:
         return mono
-    n_out = int(round(mono.shape[0] * sr_out / sr_in))
+    n_out = round(mono.shape[0] * sr_out / sr_in)
     x_old = np.linspace(0.0, 1.0, mono.shape[0], endpoint=False)
     x_new = np.linspace(0.0, 1.0, n_out, endpoint=False)
     return np.interp(x_new, x_old, mono).astype(np.float32)
@@ -82,7 +81,7 @@ class SamSeparator:
         mono: np.ndarray,
         sr: int,
         description: str,
-        progress_cb: Optional[ProgressCallback] = None,
+        progress_cb: ProgressCallback | None = None,
     ) -> tuple[np.ndarray, np.ndarray, int]:
         """Run separation and return (target, residual, sample_rate) as numpy mono.
 
