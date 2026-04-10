@@ -15,6 +15,7 @@ _HELP = """\
   ← / →           seek ±5s
   shift+← / →     seek ±1s
   - / +           speed 0.5× .. 2.0×
+  v / shift+v     volume +3dB / -3dB
   click bar       seek to clicked position
 
 [b]Fragments[/b]
