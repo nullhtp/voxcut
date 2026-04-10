@@ -30,6 +30,8 @@ _HELP = """\
 [b]Voice isolation[/b]
   d               isolate voice (selected fragment or whole file)
   ctrl+k          cancel in-flight isolation (result is dropped)
+                   in result screen: t/r/o to play, k to keep,
+                   l to load target into TUI, shift+r to re-run
 
 [b]Files & misc[/b]
   f               open another file

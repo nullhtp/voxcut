@@ -32,7 +32,7 @@ class SeparationResultData:
 
 @dataclass(frozen=True)
 class ResultDecision:
-    action: str  # "keep" | "rerun"
+    action: str  # "keep" | "rerun" | "load"
     kept_paths: tuple[Path, Path] | None = None
 
 
@@ -44,6 +44,7 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         Binding("o", "play_original", "play original"),
         Binding("space", "stop", "stop"),
         Binding("k", "keep", "keep"),
+        Binding("l", "load_target", "load target"),
         Binding("shift+r", "rerun", "re-run"),
     ]
 
@@ -87,6 +88,7 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
                 yield Button("■ Stop (␣)", id="b_stop")
             with Horizontal(id="choice_row"):
                 yield Button("Keep (k)", variant="primary", id="b_keep")
+                yield Button("Load target (l)", variant="success", id="b_load")
                 yield Button("Re-run (shift+r)", id="b_rerun")
                 yield Button("Discard (esc)", id="b_discard")
 
@@ -170,6 +172,17 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
             ResultDecision(action="keep", kept_paths=(target_path, residual_path))
         )
 
+    def action_load_target(self) -> None:
+        self._stop()
+        d = self._data
+        target_path = d.out_base.with_name(d.out_base.name + "_target.wav")
+        residual_path = d.out_base.with_name(d.out_base.name + "_residual.wav")
+        save_wav(target_path, d.target, d.sample_rate)
+        save_wav(residual_path, d.residual, d.sample_rate)
+        self.dismiss(
+            ResultDecision(action="load", kept_paths=(target_path, residual_path))
+        )
+
     def action_rerun(self) -> None:
         self._stop()
         self.dismiss(ResultDecision(action="rerun"))
@@ -185,5 +198,6 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
             case "b_original": self._play("original")
             case "b_stop": self._stop()
             case "b_keep": self.action_keep()
+            case "b_load": self.action_load_target()
             case "b_rerun": self.action_rerun()
             case "b_discard": self.action_discard()

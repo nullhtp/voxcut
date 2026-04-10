@@ -663,9 +663,12 @@ class AudioTUI(App):
         if decision is None:
             self._log("[dim]result discarded[/dim]")
             return
-        if decision.action == "keep" and decision.kept_paths is not None:
+        if decision.action in ("keep", "load") and decision.kept_paths is not None:
             t, r = decision.kept_paths
             self._log(f"[green]kept →[/green] {t.name} + {r.name}")
+            if decision.action == "load":
+                self._log(f"loading target [b]{t.name}[/b] …")
+                self._on_file_chosen(t)
             return
         if decision.action == "rerun":
             self.push_screen(
