@@ -284,8 +284,11 @@ class AudioTUI(App):
 
     def _refresh_marks(self) -> None:
         ip = fmt_time(self.in_point) if self.in_point is not None else "—"
+        n = len(self.fragments)
+        total = sum(f.duration for f in self.fragments)
+        frag_info = f"{n} fragments ({fmt_time(total)})" if n else "no fragments"
         self._w_marks.update(
-            f"in: {ip}    ({len(self.fragments)} fragments — enter to play, ? for help)"
+            f"in: {ip}    {frag_info} — enter to play, ? for help"
         )
 
     def _refresh_list(self, select: int | None = None) -> None:
