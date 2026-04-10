@@ -51,6 +51,30 @@ uv run voxcut recording.mp3    # open a file
 uv run voxcut                  # no arg — file picker on startup
 ```
 
+## Quick start
+
+Open an audio file and try the basic workflow:
+
+```bash
+uv run voxcut recording.mp3
+```
+
+1. **Listen** — press `space` to play, `← / →` to seek
+2. **Mark a fragment** — seek to where you want to start, press `i` (in-point).
+   The waveform shows a yellow marker. Seek to the end, press `o` (out-point).
+   A green fragment appears on the waveform and in the list.
+3. **Fine-tune** — press `p` to play the fragment. Use `[` / `]` to expand or
+   `{` / `}` to contract boundaries (you'll hear a short preview after each
+   nudge). Press `g` / `G` to jump to the fragment start/end.
+4. **Isolate a voice** — press `d`, type a description like `man speaking`,
+   press Enter. A progress bar shows while SAM-Audio runs. When done, audition
+   the result: `t` = target, `r` = residual, `o` = original. Press `k` to
+   keep the files or `l` to load the target back into the editor.
+5. **Save** — press `s` to open the save dialog. Pick concat or separate mode,
+   choose an output format, and save.
+
+Press `?` at any time for the full keybinding reference.
+
 ## Keybindings
 
 Press `?` inside the TUI for the full reference. Summary:
