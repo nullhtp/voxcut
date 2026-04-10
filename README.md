@@ -31,20 +31,27 @@ audio — powered by [SAM-Audio (MLX)](https://huggingface.co/mlx-community/sam-
 
 ## Install
 
-### Homebrew (recommended)
+### pip / uv (recommended)
+
+```bash
+brew install ffmpeg        # required dependency
+uv tool install voxcut     # or: pip install voxcut
+```
+
+### Homebrew tap
 
 ```bash
 brew tap nullhtp/voxcut
 brew install voxcut
 ```
 
-### pip / uv
+### From source
 
 ```bash
-uv tool install voxcut    # or: pip install voxcut
+git clone https://github.com/nullhtp/voxcut.git
+cd voxcut
+uv sync
 ```
-
-Requires `ffmpeg` on `PATH` (`brew install ffmpeg`).
 
 ### From source
 
