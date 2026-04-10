@@ -636,6 +636,8 @@ class AudioTUI(App):
             target=target,
             residual=residual,
             out_base=out_base,
+            original=pending.mono,
+            original_sr=pending.sr,
         )
         self.push_screen(
             SeparationResultScreen(data),

@@ -14,6 +14,9 @@ from textual.widgets import Button, Label, Static
 
 from ..player import Player
 from ..separator import save_wav
+from ..timeutil import fmt_time
+
+_BAR_WIDTH = 30
 
 
 @dataclass
@@ -23,6 +26,8 @@ class SeparationResultData:
     target: np.ndarray    # mono float32
     residual: np.ndarray  # mono float32
     out_base: Path        # destination basename (no suffix)
+    original: np.ndarray | None = None   # mono float32, source segment
+    original_sr: int = 0
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,7 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         Binding("escape", "discard", "discard"),
         Binding("t", "play_target", "play target"),
         Binding("r", "play_residual", "play residual"),
+        Binding("o", "play_original", "play original"),
         Binding("space", "stop", "stop"),
         Binding("k", "keep", "keep"),
         Binding("shift+r", "rerun", "re-run"),
@@ -51,14 +57,15 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         height: auto; align: center middle; margin-top: 1;
     }
     SeparationResultScreen Button { margin: 0 1; }
+    SeparationResultScreen #playback_bar { color: $accent; margin-top: 1; }
     """
 
     def __init__(self, data: SeparationResultData) -> None:
         super().__init__()
         self._data = data
-        self._target_player: Optional[Player] = None
-        self._residual_player: Optional[Player] = None
-        self._active: Optional[Player] = None
+        self._players: dict[str, Player] = {}
+        self._active_name: str = ""
+        self._timer = None
 
     # --- layout ---
 
@@ -69,12 +76,14 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         with Vertical():
             yield Label(f"[b]Separation result[/b] — {d.description!r}")
             yield Static(
-                f"target:   {t_dur:6.2f}s    residual: {r_dur:6.2f}s"
+                f"target: {t_dur:.2f}s    residual: {r_dur:.2f}s"
             )
-            yield Static("", id="play_status")
+            yield Static("", id="playback_bar")
             with Horizontal(id="play_row"):
                 yield Button("▶ Target (t)", id="b_target")
                 yield Button("▶ Residual (r)", id="b_residual")
+                if d.original is not None:
+                    yield Button("▶ Original (o)", id="b_original")
                 yield Button("■ Stop (␣)", id="b_stop")
             with Horizontal(id="choice_row"):
                 yield Button("Keep (k)", variant="primary", id="b_keep")
@@ -82,41 +91,72 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
                 yield Button("Discard (esc)", id="b_discard")
 
     def on_mount(self) -> None:
-        self._target_player = Player(self._data.target, self._data.sample_rate)
-        self._residual_player = Player(self._data.residual, self._data.sample_rate)
+        d = self._data
+        self._players["target"] = Player(d.target, d.sample_rate)
+        self._players["residual"] = Player(d.residual, d.sample_rate)
+        if d.original is not None and d.original_sr > 0:
+            self._players["original"] = Player(d.original, d.original_sr)
+        self._timer = self.set_interval(0.1, self._tick)
 
     def on_unmount(self) -> None:
         self._stop()
-        for p in (self._target_player, self._residual_player):
-            if p is not None:
-                p.close()
+        for p in self._players.values():
+            p.close()
 
     # --- playback ---
 
-    def _play(self, which: str) -> None:
+    def _play(self, name: str) -> None:
         self._stop()
-        p = self._target_player if which == "target" else self._residual_player
+        p = self._players.get(name)
         if p is None:
-            return
+            self.app.bell(); return
         p.seek_to(0.0)
         if not p.playing:
             p.toggle()
-        self._active = p
-        self.query_one("#play_status", Static).update(f"playing: {which}")
+        self._active_name = name
 
     def _stop(self) -> None:
-        if self._active and self._active.playing:
-            self._active.toggle()
-        self._active = None
+        if self._active_name:
+            p = self._players.get(self._active_name)
+            if p and p.playing:
+                p.toggle()
+        self._active_name = ""
+        self._update_bar()
+
+    def _tick(self) -> None:
+        self._update_bar()
+
+    def _update_bar(self) -> None:
         try:
-            self.query_one("#play_status", Static).update("")
+            bar_widget = self.query_one("#playback_bar", Static)
         except Exception:
-            pass
+            return
+        if not self._active_name:
+            bar_widget.update("")
+            return
+        p = self._players.get(self._active_name)
+        if p is None:
+            bar_widget.update("")
+            return
+        pos, dur = p.position, p.duration
+        if not p.playing and pos >= dur - 0.05:
+            # finished
+            self._active_name = ""
+            bar_widget.update("")
+            return
+        frac = min(1.0, pos / dur) if dur > 0 else 0.0
+        filled = int(_BAR_WIDTH * frac)
+        bar = "█" * filled + "░" * (_BAR_WIDTH - filled)
+        bar_widget.update(
+            f"▶ {self._active_name}  {bar}  "
+            f"{fmt_time(pos)} / {fmt_time(dur)}"
+        )
 
     # --- actions ---
 
     def action_play_target(self) -> None: self._play("target")
     def action_play_residual(self) -> None: self._play("residual")
+    def action_play_original(self) -> None: self._play("original")
     def action_stop(self) -> None: self._stop()
 
     def action_keep(self) -> None:
@@ -142,6 +182,7 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         match event.button.id:
             case "b_target": self._play("target")
             case "b_residual": self._play("residual")
+            case "b_original": self._play("original")
             case "b_stop": self._stop()
             case "b_keep": self.action_keep()
             case "b_rerun": self.action_rerun()
