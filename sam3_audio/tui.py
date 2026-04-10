@@ -97,6 +97,7 @@ class AudioTUI(App):
         Binding("V", "gain(-3)", "vol-"),
         Binding("i", "mark_in", "mark in"),
         Binding("o", "mark_out", "mark out"),
+        Binding("p", "play_fragment", "play fragment"),
         Binding("x", "del_fragment", "delete"),
         Binding("u", "undo_delete", "undo"),
         Binding("left_square_bracket", "nudge_start(-0.1)", "in ←"),
@@ -634,10 +635,16 @@ class AudioTUI(App):
 
     # --- fragment audition ---
 
+    def action_play_fragment(self) -> None:
+        self._play_selected_fragment()
+
     def on_list_view_selected(self, event: ListView.Selected) -> None:  # noqa: ARG002
+        self._play_selected_fragment()
+
+    def _play_selected_fragment(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            return
+            self.bell(); return
         self.player.seek_to(frag.start)
         self._play_until = frag.end
         self._playing_frag_idx = self.fragments.index(frag)

@@ -21,7 +21,7 @@ _HELP = """\
 [b]Fragments[/b]
   i               mark in-point
   o               mark out-point (adds fragment)
-  enter           play selected fragment (auto-stops at out-point)
+  p / enter       play selected fragment (auto-stops at out-point)
   [ / ]           nudge in-point earlier / out-point later (expand ±0.1s)
   { / }           nudge in-point later / out-point earlier (contract ±0.1s)
   x               delete selected fragment
