@@ -24,6 +24,8 @@ _HELP = """\
   p / enter       play selected fragment (auto-stops at out-point)
   [ / ]           nudge in-point earlier / out-point later (expand ±0.1s)
   { / }           nudge in-point later / out-point earlier (contract ±0.1s)
+  S               split selected fragment at cursor
+  m               merge selected fragment with next
   x               delete selected fragment
   u               undo last delete
   s               save fragments (concat / separate)
