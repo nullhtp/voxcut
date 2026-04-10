@@ -93,6 +93,8 @@ class AudioTUI(App):
         Binding("shift+left", "seek(-1)", "-1s"),
         Binding("plus,equals_sign,equal", "speed(0.1)", "speed+"),
         Binding("minus", "speed(-0.1)", "speed-"),
+        Binding("v", "gain(3)", "vol+"),
+        Binding("shift+v", "gain(-3)", "vol-"),
         Binding("i", "mark_in", "mark in"),
         Binding("o", "mark_out", "mark out"),
         Binding("x", "del_fragment", "delete"),
@@ -269,9 +271,10 @@ class AudioTUI(App):
         filled = int(_PROGRESS_BAR_WIDTH * (pos / dur)) if dur else 0
         bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
         state = "▶" if self.player.playing else "⏸"
+        gain_str = f"   {self.player.gain_db:+.0f}dB" if self.player.gain_db else ""
         self._w_progress.update(
             f"{state} {bar} {fmt_time(pos)} / {fmt_time(dur)}   "
-            f"speed {self.player.speed:.1f}x"
+            f"speed {self.player.speed:.1f}x{gain_str}"
         )
         cursor_frac = (pos / dur) if dur else 0.0
         self._w_waveform.update(waveform.render(
@@ -330,6 +333,10 @@ class AudioTUI(App):
     def action_speed(self, delta: float) -> None:
         self.player.set_speed(round(self.player.speed + delta, 2))
         self._log(f"speed → {self.player.speed:.1f}x")
+
+    def action_gain(self, db: float) -> None:
+        self.player.set_gain(round(self.player.gain_db + db, 1))
+        self._log(f"gain → {self.player.gain_db:+.0f} dB")
 
     def action_mark_in(self) -> None:
         self.in_point = self.player.position
