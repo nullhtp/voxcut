@@ -417,6 +417,16 @@ class AudioTUI(App):
             f"merged → {fmt_time(merged.start)} – {fmt_time(merged.end)}"
         )
 
+    def _preview_around(self, t: float, radius: float = 0.25) -> None:
+        """Seek near *t* and play a short preview snippet."""
+        start = max(0.0, t - radius)
+        end = min(self.player.duration, t + radius)
+        self.player.seek_to(start)
+        self._play_until = end
+        self._playing_frag_idx = None
+        if not self.player.playing:
+            self.player.toggle()
+
     def action_nudge_start(self, delta: float) -> None:
         frag = self._selected_fragment()
         if frag is None:
@@ -427,7 +437,7 @@ class AudioTUI(App):
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(new_start, frag.end)
         self._refresh_list()
-        self._log(f"in → {fmt_time(new_start)}")
+        self._preview_around(new_start)
 
     def action_nudge_end(self, delta: float) -> None:
         frag = self._selected_fragment()
@@ -439,7 +449,7 @@ class AudioTUI(App):
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(frag.start, new_end)
         self._refresh_list()
-        self._log(f"out → {fmt_time(new_end)}")
+        self._preview_around(new_end)
 
     def action_save(self) -> None:
         if not self._require_file():
