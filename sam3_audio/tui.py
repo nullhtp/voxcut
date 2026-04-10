@@ -80,7 +80,7 @@ class AudioTUI(App):
     #marks { height: 1; padding: 0 2; color: $text-muted; }
     #sep_progress { height: 1; padding: 0 2; color: $warning; display: none; }
     #list { height: 1fr; border: tall $primary; }
-    #log { height: 6; border: tall $accent-lighten-1; }
+    #log { height: 3; border: tall $accent-lighten-1; }
     """
 
     SEP_BAR_WIDTH = 30
@@ -340,16 +340,13 @@ class AudioTUI(App):
 
     def action_speed(self, delta: float) -> None:
         self.player.set_speed(round(self.player.speed + delta, 2))
-        self._log(f"speed → {self.player.speed:.1f}x")
 
     def action_gain(self, db: float) -> None:
         self.player.set_gain(round(self.player.gain_db + db, 1))
-        self._log(f"gain → {self.player.gain_db:+.0f} dB")
 
     def action_mark_in(self) -> None:
         self.in_point = self.player.position
         self._refresh_marks()
-        self._log(f"in = {fmt_time(self.in_point)}")
 
     def action_mark_out(self) -> None:
         if self.in_point is None:
@@ -365,7 +362,6 @@ class AudioTUI(App):
         self.in_point = None
         self._refresh_marks()
         self._refresh_list(select=new_idx)
-        self._log(f"+ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_del_fragment(self) -> None:
         frag = self._selected_fragment()
@@ -375,7 +371,6 @@ class AudioTUI(App):
         self._undo_stack.append(frag)
         self._refresh_list()
         self._refresh_marks()
-        self._log(f"– fragment (u to undo)")
 
     def action_undo_delete(self) -> None:
         if not self._undo_stack:
@@ -385,7 +380,6 @@ class AudioTUI(App):
         self.fragments.sort(key=lambda f: f.start)
         self._refresh_list()
         self._refresh_marks()
-        self._log(f"undo → {fmt_time(frag.start)} → {fmt_time(frag.end)}")
 
     def action_split_fragment(self) -> None:
         frag = self._selected_fragment()
@@ -713,9 +707,6 @@ class AudioTUI(App):
         if not self.player.playing:
             self.player.toggle()
         self._refresh_list()
-        self._log(
-            f"▶ fragment {fmt_time(frag.start)} → {fmt_time(frag.end)}"
-        )
 
     # --- click-to-seek ---
 
