@@ -126,6 +126,7 @@ class AudioTUI(App):
         self.player = self._load_player(wav) if wav is not None else self._silent_player()
         self._peaks = self._compute_peaks()
         self._last_description = ""
+        self._description_history: list[str] = []
         self._undo_stack: list[Fragment] = []
         self._play_until: Optional[float] = None
         self._sep_busy = False
@@ -387,7 +388,11 @@ class AudioTUI(App):
         else:
             scope = "whole file"
         self.push_screen(
-            DescribePrompt(scope=scope, default=self._last_description),
+            DescribePrompt(
+                scope=scope,
+                default=self._last_description,
+                history=self._description_history,
+            ),
             lambda value: self._on_describe_initial(value, frag),
         )
 
@@ -539,6 +544,12 @@ class AudioTUI(App):
         self._sep_generation += 1
         generation = self._sep_generation
         self._last_description = pending.description
+        # update history
+        desc = pending.description.strip()
+        if desc in self._description_history:
+            self._description_history.remove(desc)
+        self._description_history.insert(0, desc)
+        self._description_history = self._description_history[:10]
         total_s = pending.mono.shape[0] / pending.sr
         self._log(
             f"isolating [b]{pending.description!r}[/b] on {pending.tag} "
@@ -661,6 +672,7 @@ class AudioTUI(App):
                 DescribePrompt(
                     scope=f"same audio ({pending.tag})",
                     default=pending.description,
+                    history=self._description_history,
                 ),
                 lambda desc: self._on_describe_rerun(desc, pending),
             )
@@ -699,6 +711,8 @@ class AudioTUI(App):
             )
         if sess.last_description:
             self._last_description = sess.last_description
+        if sess.description_history:
+            self._description_history = list(sess.description_history)
 
     def _save_session(self) -> None:
         if self.src is None:
@@ -706,6 +720,7 @@ class AudioTUI(App):
         sess = session.Session(
             fragments=list(self.fragments),
             last_description=self._last_description,
+            description_history=list(self._description_history),
         )
         try:
             session.save(self.src, sess)
