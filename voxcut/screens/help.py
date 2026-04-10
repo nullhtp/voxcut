@@ -8,7 +8,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 _HELP = """\
-[b cyan]sam3-audio — keybindings[/b cyan]
+[b cyan]voxcut — keybindings[/b cyan]
 
 [b]Playback[/b]
   space           play / pause

@@ -28,4 +28,4 @@ htmlcov/
 *.ogg
 
 # Per-file session sidecars
-*.sam3.json
+*.voxcut.json

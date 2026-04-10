@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from sam3_audio.separator import SamSeparator
-from sam3_audio.tui import AudioTUI
+from voxcut.separator import SamSeparator
+from voxcut.tui import AudioTUI
 
 
 @pytest.fixture

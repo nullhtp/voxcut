@@ -32,7 +32,7 @@ def _cleanup(path: Path | None) -> None:
 
 def tui_main() -> None:
     ap = argparse.ArgumentParser(
-        prog="sam3-audio",
+        prog="voxcut",
         description="Play audio, cut fragments, and isolate voices with SAM-Audio.",
     )
     ap.add_argument(
@@ -76,7 +76,7 @@ def tui_main() -> None:
 
 def separate_main() -> None:
     ap = argparse.ArgumentParser(
-        prog="sam3-separate",
+        prog="voxcut-separate",
         description="Isolate a described voice from an audio file using SAM-Audio.",
     )
     ap.add_argument("input", type=Path)
