@@ -50,6 +50,8 @@ Press `?` any time for the in-app help.
 | click bar        | seek to clicked position (progress bar or waveform)       |
 | `i` / `o`        | mark in / out point (adds fragment)                       |
 | `enter`          | play selected fragment (auto-stops at out-point)          |
+| `[` / `]`        | nudge selected fragment in/out ±0.1s (expand)             |
+| `{` / `}`        | nudge selected fragment in/out ±0.1s (contract)           |
 | `x` / `u`        | delete selected fragment / undo last delete               |
 | `s`              | save fragments (modal: concat or separate files)          |
 | `d`              | isolate voice on selection or whole file                  |
@@ -60,9 +62,16 @@ Press `?` any time for the in-app help.
 
 ### Separation result screen
 
-After `d` finishes you land in an audition modal: `t` plays the isolated
-target, `r` plays the residual, `space` stops, `k` keeps (writes WAVs to disk),
-`shift+r` re-runs with a different description, `esc` discards.
+After `d` finishes you land in an audition modal:
+
+| Key          | Action                                    |
+| ------------ | ----------------------------------------- |
+| `t` / `r` / `o` | play target / residual / original     |
+| `space`      | stop playback                             |
+| `k`          | keep (write WAVs to disk)                 |
+| `l`          | keep + load target into main TUI          |
+| `shift+r`    | re-run with a different description       |
+| `esc`        | discard                                   |
 
 ### Session persistence
 
