@@ -253,7 +253,13 @@ class AudioTUI(App):
             f"speed {self.player.speed:.1f}x"
         )
         cursor_frac = (pos / dur) if dur else 0.0
-        self._w_waveform.update(waveform.render(self._peaks, cursor_frac))
+        self._w_waveform.update(waveform.render(
+            self._peaks,
+            cursor_frac,
+            duration=dur,
+            fragments=[(f.start, f.end) for f in self.fragments],
+            in_point=self.in_point,
+        ))
 
     def _refresh_marks(self) -> None:
         ip = fmt_time(self.in_point) if self.in_point is not None else "—"

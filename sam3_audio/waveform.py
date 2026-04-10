@@ -1,10 +1,18 @@
 """Precomputed peak-waveform strip, rendered as Rich text."""
 from __future__ import annotations
 
+from typing import Optional, Sequence
+
 import numpy as np
 from rich.text import Text
 
 _BLOCKS = " ▁▂▃▄▅▆▇█"
+
+# Style priority (highest wins):  cursor > in-point > fragment > default
+_STYLE_DEFAULT = "cyan"
+_STYLE_FRAGMENT = "green"
+_STYLE_IN_POINT = "bold yellow"
+_STYLE_CURSOR = "reverse bold yellow"
 
 
 def compute_peaks(mono: np.ndarray, width: int) -> np.ndarray:
@@ -24,13 +32,45 @@ def compute_peaks(mono: np.ndarray, width: int) -> np.ndarray:
     return peaks
 
 
-def render(peaks: np.ndarray, cursor_frac: float) -> Text:
+def _col(frac: float, width: int) -> int:
+    return min(width - 1, max(0, int(frac * width)))
+
+
+def render(
+    peaks: np.ndarray,
+    cursor_frac: float,
+    duration: float = 0.0,
+    fragments: Sequence[tuple[float, float]] = (),
+    in_point: Optional[float] = None,
+) -> Text:
+    """Render the waveform strip with overlays.
+
+    ``fragments`` is a sequence of ``(start_sec, end_sec)`` pairs.
+    ``in_point`` is the pending mark-in position in seconds.
+    """
     width = int(peaks.shape[0])
-    cursor_col = min(width - 1, max(0, int(cursor_frac * width)))
-    text = Text()
+    if width == 0:
+        return Text()
+
+    # Pre-compute per-column style
+    styles = [_STYLE_DEFAULT] * width
     levels = len(_BLOCKS) - 1
+
+    if duration > 0:
+        for start, end in fragments:
+            a = _col(start / duration, width)
+            b = _col(end / duration, width)
+            for j in range(a, b + 1):
+                styles[j] = _STYLE_FRAGMENT
+        if in_point is not None:
+            c = _col(in_point / duration, width)
+            styles[c] = _STYLE_IN_POINT
+
+    cursor_col = _col(cursor_frac, width)
+    styles[cursor_col] = _STYLE_CURSOR
+
+    text = Text()
     for i, p in enumerate(peaks):
         ch = _BLOCKS[int(round(float(p) * levels))]
-        style = "reverse bold yellow" if i == cursor_col else "cyan"
-        text.append(ch, style=style)
+        text.append(ch, style=styles[i])
     return text
