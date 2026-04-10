@@ -105,6 +105,7 @@ class AudioTUI(App):
         Binding("right_curly_bracket", "nudge_end(-0.1)", "out ←"),
         Binding("s", "save", "save cuts"),
         Binding("d", "separate", "isolate voice"),
+        Binding("shift+d", "separate_all", "isolate all"),
         Binding("ctrl+k", "cancel_separation", "cancel isolation"),
         Binding("f", "open_file", "open file"),
         Binding("question_mark,?", "help", "help"),
@@ -433,6 +434,140 @@ class AudioTUI(App):
             ),
             lambda value: self._on_describe_initial(value, frag),
         )
+
+    def action_separate_all(self) -> None:
+        if not self._require_file():
+            return
+        if self._sep_busy:
+            self._log("[yellow]isolation already in progress — ctrl+k to cancel[/yellow]")
+            self.bell(); return
+        if not self.fragments:
+            self._log("[yellow]no fragments to isolate[/yellow]")
+            self.bell(); return
+        self.push_screen(
+            DescribePrompt(
+                scope=f"all {len(self.fragments)} fragments",
+                default=self._last_description,
+                history=self._description_history,
+            ),
+            self._on_describe_batch,
+        )
+
+    def _on_describe_batch(self, description: str | None) -> None:
+        if not description:
+            self._log("[dim]batch isolation cancelled[/dim]")
+            return
+        frags = list(self.fragments)
+        pendings: list[_PendingSeparation] = []
+        for i, frag in enumerate(frags):
+            try:
+                mono, sr, tag, out_base = self._prepare_audio(frag)
+            except Exception as e:
+                self._log(f"[red]prepare failed for fragment {i + 1}:[/red] {e}")
+                continue
+            pendings.append(_PendingSeparation(
+                description=description, mono=mono, sr=sr,
+                tag=tag, out_base=out_base, fragment=frag,
+            ))
+        if not pendings:
+            self._log("[red]no fragments to process[/red]")
+            return
+        self._start_batch_separation(pendings)
+
+    def _start_batch_separation(self, pendings: list[_PendingSeparation]) -> None:
+        self._sep_busy = True
+        self._sep_generation += 1
+        generation = self._sep_generation
+        desc = pendings[0].description
+        self._last_description = desc
+        # update history
+        d = desc.strip()
+        if d in self._description_history:
+            self._description_history.remove(d)
+        self._description_history.insert(0, d)
+        self._description_history = self._description_history[:10]
+        self._log(
+            f"batch isolating [b]{desc!r}[/b] on {len(pendings)} fragments — "
+            f"[dim]ctrl+k to cancel[/dim]"
+        )
+        threading.Thread(
+            target=self._run_batch_separation,
+            args=(pendings, generation),
+            daemon=True,
+        ).start()
+
+    def _run_batch_separation(
+        self, pendings: list[_PendingSeparation], generation: int
+    ) -> None:
+        from .separator import save_wav
+
+        total = len(pendings)
+        for idx, pending in enumerate(pendings):
+            if generation != self._sep_generation:
+                self.call_from_thread(self._finish_sep_cancelled, generation)
+                return
+
+            def progress_cb(done_s: float, total_s: float) -> None:
+                if generation != self._sep_generation:
+                    raise _CancelledSeparation
+                self.call_from_thread(
+                    self._update_batch_progress,
+                    idx, total, done_s, total_s, generation,
+                )
+
+            self.call_from_thread(
+                self._log,
+                f"[dim]fragment {idx + 1}/{total}: {pending.tag}[/dim]",
+            )
+            try:
+                target, residual, target_sr = self.separator.separate_arrays(
+                    pending.mono, pending.sr, pending.description,
+                    progress_cb=progress_cb,
+                )
+            except _CancelledSeparation:
+                self.call_from_thread(self._finish_sep_cancelled, generation)
+                return
+            except Exception as e:
+                self.call_from_thread(self._finish_sep_error, generation, str(e))
+                return
+
+            slug = _safe_slug(pending.description)
+            out_base = pending.out_base.with_name(f"{pending.out_base.name}_{slug}")
+            target_path = out_base.with_name(out_base.name + "_target.wav")
+            residual_path = out_base.with_name(out_base.name + "_residual.wav")
+            save_wav(target_path, target, target_sr)
+            save_wav(residual_path, residual, target_sr)
+            self.call_from_thread(
+                self._log,
+                f"[green]→[/green] {target_path.name} + {residual_path.name}",
+            )
+
+        self.call_from_thread(self._finish_batch_ok, generation, total)
+
+    def _update_batch_progress(
+        self, frag_idx: int, frag_total: int,
+        done_s: float, total_s: float, generation: int,
+    ) -> None:
+        if generation != self._sep_generation:
+            return
+        frac = min(1.0, done_s / total_s) if total_s > 0 else 0.0
+        filled = int(self.SEP_BAR_WIDTH * frac)
+        bar = "█" * filled + "░" * (self.SEP_BAR_WIDTH - filled)
+        pct = int(frac * 100)
+        self._w_sep_progress.update(
+            f"[b]batch[/b] {frag_idx + 1}/{frag_total}  "
+            f"{bar} {pct:3d}%   "
+            f"{done_s:5.1f}s / {total_s:5.1f}s   "
+            f"[dim]ctrl+k to cancel[/dim]"
+        )
+        self._w_sep_progress.styles.display = "block"
+
+    def _finish_batch_ok(self, generation: int, total: int) -> None:
+        if generation != self._sep_generation:
+            return
+        self._sep_busy = False
+        self._hide_sep_progress()
+        self._log(f"[green]batch complete:[/green] {total} fragments isolated")
 
     def action_cancel_separation(self) -> None:
         if not self._sep_busy:
