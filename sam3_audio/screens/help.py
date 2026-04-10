@@ -22,6 +22,7 @@ _HELP = """\
   i               mark in-point
   o               mark out-point (adds fragment)
   p / enter       play selected fragment (auto-stops at out-point)
+  g / G           seek to start / end of selected fragment
   [ / ]           nudge in-point earlier / out-point later (expand ±0.1s)
   { / }           nudge in-point later / out-point earlier (contract ±0.1s)
   S               split selected fragment at cursor

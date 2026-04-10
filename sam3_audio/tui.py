@@ -98,6 +98,8 @@ class AudioTUI(App):
         Binding("i", "mark_in", "mark in"),
         Binding("o", "mark_out", "mark out"),
         Binding("p", "play_fragment", "play fragment"),
+        Binding("g", "goto_frag_start", "go to start"),
+        Binding("G", "goto_frag_end", "go to end"),
         Binding("x", "del_fragment", "delete"),
         Binding("u", "undo_delete", "undo"),
         Binding("S", "split_fragment", "split at cursor"),
@@ -680,6 +682,18 @@ class AudioTUI(App):
             self._log(f"[red]open failed:[/red] {e}")
 
     # --- fragment audition ---
+
+    def action_goto_frag_start(self) -> None:
+        frag = self._selected_fragment()
+        if frag is None:
+            self.bell(); return
+        self.player.seek_to(frag.start)
+
+    def action_goto_frag_end(self) -> None:
+        frag = self._selected_fragment()
+        if frag is None:
+            self.bell(); return
+        self.player.seek_to(frag.end)
 
     def action_play_fragment(self) -> None:
         self._play_selected_fragment()
