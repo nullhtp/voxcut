@@ -34,6 +34,8 @@ from .screens import (
     SaveRequest,
     SeparationResultData,
     SeparationResultScreen,
+    WelcomeScreen,
+    should_show_welcome,
 )
 from .separator import SamSeparator, slice_mono
 from .timeutil import fmt_time
@@ -198,7 +200,10 @@ class AudioTUI(App):
             f"[dim]opened[/dim] {self.src.name} "
             f"([dim]{fmt_time(self.player.duration)}[/dim])"
         )
-        self._log("press [b]?[/b] for help")
+        if should_show_welcome():
+            self.call_after_refresh(lambda: self.push_screen(WelcomeScreen()))
+        else:
+            self._log("press [b]?[/b] for help")
 
     def on_resize(self, event: events.Resize) -> None:
         self._recompute_peaks_if_needed()

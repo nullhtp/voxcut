@@ -8,6 +8,7 @@ from .separation_result import (
     SeparationResultData,
     SeparationResultScreen,
 )
+from .welcome import WelcomeScreen, should_show_welcome
 
 __all__ = [
     "ConfirmScreen",
@@ -18,4 +19,6 @@ __all__ = [
     "SaveRequest",
     "SeparationResultData",
     "SeparationResultScreen",
+    "WelcomeScreen",
+    "should_show_welcome",
 ]
