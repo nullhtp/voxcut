@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 import numpy as np
 import sounddevice as sd
@@ -29,7 +28,7 @@ class Player:
         self._gain_linear = 1.0
         self.playing = False
         self._lock = threading.Lock()
-        self.stream: Optional[sd.OutputStream] = None
+        self.stream: sd.OutputStream | None = None
         self._open_stream()
 
     # --- stream lifecycle ---
@@ -53,7 +52,7 @@ class Player:
             pass
         self.stream = None
 
-    def _callback(self, outdata, frames, time_info, status) -> None:  # noqa: ARG002
+    def _callback(self, outdata, frames, time_info, status) -> None:
         with self._lock:
             if not self.playing:
                 outdata[:] = 0

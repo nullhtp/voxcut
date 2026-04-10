@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional
 
 from .fragment import Fragment
 
@@ -13,7 +12,13 @@ _BASE = ["ffmpeg", "-y", "-v", "error"]
 
 
 def _run(cmd: list[str], *, check: bool = True) -> int:
-    return subprocess.run(cmd, check=check).returncode
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd[0], output=result.stdout, stderr=stderr
+        )
+    return result.returncode
 
 
 def decode_to_wav(src: Path, dst: Path) -> None:
@@ -50,7 +55,7 @@ def concat_cuts(
     frags: Iterable[Fragment],
     dst: Path,
     *,
-    out_ext: Optional[str] = None,
+    out_ext: str | None = None,
 ) -> None:
     """Cut each fragment from ``src`` and concatenate into a single ``dst`` file.
 
@@ -79,7 +84,7 @@ def split_cuts(
     frags: Iterable[Fragment],
     out_dir: Path,
     *,
-    out_ext: Optional[str] = None,
+    out_ext: str | None = None,
 ) -> None:
     """Write each fragment of ``src`` as its own file inside ``out_dir``.
 

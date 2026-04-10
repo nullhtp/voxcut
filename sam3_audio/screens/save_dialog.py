@@ -10,7 +10,6 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Select
 
-
 _FORMAT_CHOICES = [
     ("Same as input", "same"),
     ("WAV (.wav)", ".wav"),
@@ -78,10 +77,10 @@ class SaveDialog(ModalScreen[SaveRequest | None]):
         fmt = self.query_one("#format", Select).value
         self.query_one("#path", Input).value = self._defaults(mode, str(fmt))
 
-    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:  # noqa: ARG002
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         self._update_path()
 
-    def on_select_changed(self, event: Select.Changed) -> None:  # noqa: ARG002
+    def on_select_changed(self, event: Select.Changed) -> None:
         self._update_path()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -90,7 +89,7 @@ class SaveDialog(ModalScreen[SaveRequest | None]):
             return
         self._submit()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:  # noqa: ARG002
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         self._submit()
 
     def _submit(self) -> None:

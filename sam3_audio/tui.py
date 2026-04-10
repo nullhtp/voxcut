@@ -5,7 +5,6 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -70,7 +69,7 @@ class _PendingSeparation:
     sr: int
     tag: str
     out_base: Path
-    fragment: Optional[Fragment]
+    fragment: Fragment | None
 
 
 class AudioTUI(App):
@@ -125,22 +124,22 @@ class AudioTUI(App):
 
     def __init__(
         self,
-        src: Optional[Path],
-        wav: Optional[Path],
+        src: Path | None,
+        wav: Path | None,
         separator: SamSeparator,
     ):
         super().__init__()
-        self.src: Optional[Path] = src
-        self.wav_path: Optional[Path] = wav
+        self.src: Path | None = src
+        self.wav_path: Path | None = wav
         self.separator = separator
         self.fragments: list[Fragment] = []
-        self.in_point: Optional[float] = None
+        self.in_point: float | None = None
         self.player = self._load_player(wav) if wav is not None else self._silent_player()
         self._peaks = self._compute_peaks()
         self._last_description = ""
         self._description_history: list[str] = []
         self._undo_stack: list[Fragment] = []
-        self._play_until: Optional[float] = None
+        self._play_until: float | None = None
         self._playing_frag_idx: int | None = None
         self._dirty = False
         self._sep_busy = False
@@ -201,7 +200,7 @@ class AudioTUI(App):
         )
         self._log("press [b]?[/b] for help")
 
-    def on_resize(self, event: events.Resize) -> None:  # noqa: ARG002
+    def on_resize(self, event: events.Resize) -> None:
         self._recompute_peaks_if_needed()
 
     def _recompute_peaks_if_needed(self) -> None:
@@ -226,7 +225,7 @@ class AudioTUI(App):
             self._on_initial_file_chosen,
         )
 
-    def _on_initial_file_chosen(self, path: Optional[Path]) -> None:
+    def _on_initial_file_chosen(self, path: Path | None) -> None:
         if path is None:
             self.exit()
             return
@@ -268,6 +267,8 @@ class AudioTUI(App):
         return True
 
     def _tick(self) -> None:
+        if not self.is_mounted:
+            return
         self.position = self.player.position
         pos, dur = self.player.position, self.player.duration
 
@@ -346,7 +347,7 @@ class AudioTUI(App):
     def _log(self, msg: str) -> None:
         self._w_log.write(msg)
 
-    def _selected_fragment(self) -> Optional[Fragment]:
+    def _selected_fragment(self) -> Fragment | None:
         idx = self._w_list.index
         if idx is None or not (0 <= idx < len(self.fragments)):
             return None
@@ -381,11 +382,13 @@ class AudioTUI(App):
 
     def action_mark_out(self) -> None:
         if self.in_point is None:
-            self.bell(); return
+            self.bell()
+            return
         start, end = self.in_point, self.player.position
         if end <= start:
             self._log("[yellow]out must be after in[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         frag = Fragment(start, end)
         self.fragments.append(frag)
         self.fragments.sort(key=lambda f: f.start)
@@ -398,7 +401,8 @@ class AudioTUI(App):
     def action_del_fragment(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         self.fragments.remove(frag)
         self._undo_stack.append(frag)
         self._mark_dirty()
@@ -407,7 +411,8 @@ class AudioTUI(App):
 
     def action_undo_delete(self) -> None:
         if not self._undo_stack:
-            self.bell(); return
+            self.bell()
+            return
         frag = self._undo_stack.pop()
         self.fragments.append(frag)
         self.fragments.sort(key=lambda f: f.start)
@@ -418,11 +423,13 @@ class AudioTUI(App):
     def action_split_fragment(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         pos = self.player.position
         if pos <= frag.start or pos >= frag.end:
             self._log("[yellow]cursor must be inside the fragment to split[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         idx = self.fragments.index(frag)
         left = Fragment(frag.start, pos)
         right = Fragment(pos, frag.end)
@@ -439,7 +446,8 @@ class AudioTUI(App):
         idx = self._w_list.index
         if idx is None or not (0 <= idx < len(self.fragments) - 1):
             self._log("[yellow]select a fragment that has a next to merge with[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         a = self.fragments[idx]
         b = self.fragments[idx + 1]
         merged = Fragment(min(a.start, b.start), max(a.end, b.end))
@@ -464,10 +472,12 @@ class AudioTUI(App):
     def action_nudge_start(self, delta: float) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         new_start = max(0.0, frag.start + delta)
         if new_start >= frag.end:
-            self.bell(); return
+            self.bell()
+            return
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(new_start, frag.end)
         self._mark_dirty()
@@ -477,10 +487,12 @@ class AudioTUI(App):
     def action_nudge_end(self, delta: float) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         new_end = min(self.player.duration, frag.end + delta)
         if new_end <= frag.start:
-            self.bell(); return
+            self.bell()
+            return
         idx = self.fragments.index(frag)
         self.fragments[idx] = Fragment(frag.start, new_end)
         self._mark_dirty()
@@ -492,7 +504,8 @@ class AudioTUI(App):
             return
         if not self.fragments:
             self._log("[yellow]no fragments to save[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         self.push_screen(SaveDialog(self.src), self._handle_save)
 
     def action_separate(self) -> None:
@@ -500,7 +513,8 @@ class AudioTUI(App):
             return
         if self._sep_busy:
             self._log("[yellow]isolation already in progress — ctrl+k to cancel[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         frag = self._selected_fragment()
         if frag is not None:
             scope = (
@@ -523,10 +537,12 @@ class AudioTUI(App):
             return
         if self._sep_busy:
             self._log("[yellow]isolation already in progress — ctrl+k to cancel[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         if not self.fragments:
             self._log("[yellow]no fragments to isolate[/yellow]")
-            self.bell(); return
+            self.bell()
+            return
         self.push_screen(
             DescribePrompt(
                 scope=f"all {len(self.fragments)} fragments",
@@ -590,12 +606,12 @@ class AudioTUI(App):
                 self.call_from_thread(self._finish_sep_cancelled, generation)
                 return
 
-            def progress_cb(done_s: float, total_s: float) -> None:
+            def progress_cb(done_s: float, total_s: float, _idx: int = idx) -> None:
                 if generation != self._sep_generation:
                     raise _CancelledSeparation
                 self.call_from_thread(
                     self._update_batch_progress,
-                    idx, total, done_s, total_s, generation,
+                    _idx, total, done_s, total_s, generation,
                 )
 
             self.call_from_thread(
@@ -654,7 +670,8 @@ class AudioTUI(App):
 
     def action_cancel_separation(self) -> None:
         if not self._sep_busy:
-            self.bell(); return
+            self.bell()
+            return
         self._sep_generation += 1
         self._sep_busy = False
         self._hide_sep_progress()
@@ -663,7 +680,8 @@ class AudioTUI(App):
     def action_open_file(self) -> None:
         if not _HAS_FSPICKER:
             self._log("install textual-fspicker: pip install textual-fspicker")
-            self.bell(); return
+            self.bell()
+            return
         if self._dirty and self.fragments:
             self.push_screen(
                 ConfirmScreen(
@@ -709,7 +727,7 @@ class AudioTUI(App):
 
     # --- file switching ---
 
-    def _on_file_chosen(self, path: Optional[Path]) -> None:
+    def _on_file_chosen(self, path: Path | None) -> None:
         if path is None:
             return
         try:
@@ -726,8 +744,10 @@ class AudioTUI(App):
             self.wav_path = new_tmp
             self._peaks = self._compute_peaks()
             if old_tmp is not None:
-                try: old_tmp.unlink()
-                except OSError: pass
+                try:
+                    old_tmp.unlink()
+                except OSError:
+                    pass
             self.fragments.clear()
             self._undo_stack.clear()
             self.in_point = None
@@ -748,25 +768,28 @@ class AudioTUI(App):
     def action_goto_frag_start(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         self.player.seek_to(frag.start)
 
     def action_goto_frag_end(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         self.player.seek_to(frag.end)
 
     def action_play_fragment(self) -> None:
         self._play_selected_fragment()
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:  # noqa: ARG002
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
         self._play_selected_fragment()
 
     def _play_selected_fragment(self) -> None:
         frag = self._selected_fragment()
         if frag is None:
-            self.bell(); return
+            self.bell()
+            return
         self.player.seek_to(frag.start)
         self._play_until = frag.end
         self._playing_frag_idx = self.fragments.index(frag)
@@ -792,7 +815,7 @@ class AudioTUI(App):
 
     # --- save dialog result ---
 
-    def _handle_save(self, request: Optional[SaveRequest]) -> None:
+    def _handle_save(self, request: SaveRequest | None) -> None:
         if request is None:
             return
         out_ext = None if request.format == "same" else request.format
@@ -813,7 +836,7 @@ class AudioTUI(App):
     # --- separation flow ---
 
     def _on_describe_initial(
-        self, description: Optional[str], frag: Optional[Fragment]
+        self, description: str | None, frag: Fragment | None
     ) -> None:
         if not description:
             self._log("[dim]isolation cancelled[/dim]")
@@ -834,7 +857,7 @@ class AudioTUI(App):
         self._start_separation(pending)
 
     def _prepare_audio(
-        self, frag: Optional[Fragment]
+        self, frag: Fragment | None
     ) -> tuple[np.ndarray, int, str, Path]:
         data, sr = sf.read(str(self.wav_path), dtype="float32", always_2d=True)
         mono = data.mean(axis=1) if data.shape[1] > 1 else data[:, 0]
@@ -964,7 +987,7 @@ class AudioTUI(App):
 
     def _handle_sep_decision(
         self,
-        decision: Optional[ResultDecision],
+        decision: ResultDecision | None,
         pending: _PendingSeparation,
     ) -> None:
         if decision is None:
@@ -989,7 +1012,7 @@ class AudioTUI(App):
 
     def _on_describe_rerun(
         self,
-        description: Optional[str],
+        description: str | None,
         pending: _PendingSeparation,
     ) -> None:
         if not description:

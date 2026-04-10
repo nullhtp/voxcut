@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from textual.app import ComposeResult
@@ -111,7 +110,8 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         self._stop()
         p = self._players.get(name)
         if p is None:
-            self.app.bell(); return
+            self.app.bell()
+            return
         p.seek_to(0.0)
         if not p.playing:
             p.toggle()
@@ -193,11 +193,19 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         match event.button.id:
-            case "b_target": self._play("target")
-            case "b_residual": self._play("residual")
-            case "b_original": self._play("original")
-            case "b_stop": self._stop()
-            case "b_keep": self.action_keep()
-            case "b_load": self.action_load_target()
-            case "b_rerun": self.action_rerun()
-            case "b_discard": self.action_discard()
+            case "b_target":
+                self._play("target")
+            case "b_residual":
+                self._play("residual")
+            case "b_original":
+                self._play("original")
+            case "b_stop":
+                self._stop()
+            case "b_keep":
+                self.action_keep()
+            case "b_load":
+                self.action_load_target()
+            case "b_rerun":
+                self.action_rerun()
+            case "b_discard":
+                self.action_discard()

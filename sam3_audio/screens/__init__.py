@@ -13,9 +13,9 @@ __all__ = [
     "ConfirmScreen",
     "DescribePrompt",
     "HelpScreen",
+    "ResultDecision",
     "SaveDialog",
     "SaveRequest",
-    "ResultDecision",
     "SeparationResultData",
     "SeparationResultScreen",
 ]

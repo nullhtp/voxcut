@@ -53,7 +53,7 @@ class Session:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Session":
+    def from_dict(cls, data: dict) -> Session:
         frags_raw = data.get("fragments", [])
         frags = [Fragment(float(f["start"]), float(f["end"])) for f in frags_raw]
         return cls(
