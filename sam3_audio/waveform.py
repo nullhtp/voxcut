@@ -12,6 +12,7 @@ _BLOCKS = " ▁▂▃▄▅▆▇█"
 _STYLE_DEFAULT = "cyan"
 _STYLE_FRAGMENT = "green"
 _STYLE_IN_POINT = "bold yellow"
+_STYLE_GHOST = "dim yellow"
 _STYLE_CURSOR = "reverse bold yellow"
 
 
@@ -42,11 +43,14 @@ def render(
     duration: float = 0.0,
     fragments: Sequence[tuple[float, float]] = (),
     in_point: Optional[float] = None,
+    cursor_sec: float = 0.0,
 ) -> Text:
     """Render the waveform strip with overlays.
 
     ``fragments`` is a sequence of ``(start_sec, end_sec)`` pairs.
     ``in_point`` is the pending mark-in position in seconds.
+    ``cursor_sec`` is the absolute cursor position — used together with
+    *in_point* to render a ghost selection region.
     """
     width = int(peaks.shape[0])
     if width == 0:
@@ -63,8 +67,14 @@ def render(
             for j in range(a, b + 1):
                 styles[j] = _STYLE_FRAGMENT
         if in_point is not None:
-            c = _col(in_point / duration, width)
-            styles[c] = _STYLE_IN_POINT
+            # Ghost region from in-point to cursor
+            a = _col(in_point / duration, width)
+            b = _col(cursor_sec / duration, width)
+            lo, hi = min(a, b), max(a, b)
+            for j in range(lo, hi + 1):
+                if styles[j] == _STYLE_DEFAULT:
+                    styles[j] = _STYLE_GHOST
+            styles[a] = _STYLE_IN_POINT
 
     cursor_col = _col(cursor_frac, width)
     styles[cursor_col] = _STYLE_CURSOR

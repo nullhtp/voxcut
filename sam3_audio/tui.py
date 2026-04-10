@@ -292,6 +292,7 @@ class AudioTUI(App):
             duration=dur,
             fragments=[(f.start, f.end) for f in self.fragments],
             in_point=self.in_point,
+            cursor_sec=pos,
         ))
 
     def _refresh_marks(self) -> None:
