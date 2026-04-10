@@ -48,7 +48,8 @@ _AUDIO_EXTS = {
     ".mp3", ".wav", ".flac", ".m4a", ".ogg",
     ".opus", ".aac", ".wma", ".aiff",
 }
-_PROGRESS_BAR_WIDTH = 40
+_PROGRESS_DEFAULT_WIDTH = 40
+_PROGRESS_SUFFIX_LEN = 30  # approx chars after the bar: " 00:00.000 / 00:00.000   speed 1.0x   +6dB"
 _WAVEFORM_DEFAULT_WIDTH = 80
 
 
@@ -276,8 +277,12 @@ class AudioTUI(App):
             self._playing_frag_idx = None
             self._refresh_list()
 
-        filled = int(_PROGRESS_BAR_WIDTH * (pos / dur)) if dur else 0
-        bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
+        try:
+            pw = max(10, self._w_progress.size.width - 4 - _PROGRESS_SUFFIX_LEN)
+        except Exception:
+            pw = _PROGRESS_DEFAULT_WIDTH
+        filled = int(pw * (pos / dur)) if dur else 0
+        bar = "█" * filled + "░" * (pw - filled)
         state = "▶" if self.player.playing else "⏸"
         gain_str = f"   {self.player.gain_db:+.0f}dB" if self.player.gain_db else ""
         self._w_progress.update(
