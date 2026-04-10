@@ -45,7 +45,7 @@ class SeparationResultScreen(ModalScreen[ResultDecision | None]):
         Binding("space", "stop", "stop"),
         Binding("k", "keep", "keep"),
         Binding("l", "load_target", "load target"),
-        Binding("shift+r", "rerun", "re-run"),
+        Binding("R", "rerun", "re-run"),
     ]
 
     DEFAULT_CSS = """
