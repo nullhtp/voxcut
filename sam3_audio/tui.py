@@ -100,6 +100,8 @@ class AudioTUI(App):
         Binding("p", "play_fragment", "play fragment"),
         Binding("x", "del_fragment", "delete"),
         Binding("u", "undo_delete", "undo"),
+        Binding("S", "split_fragment", "split at cursor"),
+        Binding("m", "merge_fragments", "merge with next"),
         Binding("left_square_bracket", "nudge_start(-0.1)", "in ←"),
         Binding("right_square_bracket", "nudge_end(0.1)", "out →"),
         Binding("left_curly_bracket", "nudge_start(0.1)", "in →"),
@@ -380,6 +382,40 @@ class AudioTUI(App):
         self._refresh_list()
         self._refresh_marks()
         self._log(f"undo → {fmt_time(frag.start)} → {fmt_time(frag.end)}")
+
+    def action_split_fragment(self) -> None:
+        frag = self._selected_fragment()
+        if frag is None:
+            self.bell(); return
+        pos = self.player.position
+        if pos <= frag.start or pos >= frag.end:
+            self._log("[yellow]cursor must be inside the fragment to split[/yellow]")
+            self.bell(); return
+        idx = self.fragments.index(frag)
+        left = Fragment(frag.start, pos)
+        right = Fragment(pos, frag.end)
+        self.fragments[idx:idx + 1] = [left, right]
+        self._refresh_list(select=idx)
+        self._refresh_marks()
+        self._log(
+            f"split → {fmt_time(left.start)}–{fmt_time(left.end)} | "
+            f"{fmt_time(right.start)}–{fmt_time(right.end)}"
+        )
+
+    def action_merge_fragments(self) -> None:
+        idx = self._w_list.index
+        if idx is None or not (0 <= idx < len(self.fragments) - 1):
+            self._log("[yellow]select a fragment that has a next to merge with[/yellow]")
+            self.bell(); return
+        a = self.fragments[idx]
+        b = self.fragments[idx + 1]
+        merged = Fragment(min(a.start, b.start), max(a.end, b.end))
+        self.fragments[idx:idx + 2] = [merged]
+        self._refresh_list(select=idx)
+        self._refresh_marks()
+        self._log(
+            f"merged → {fmt_time(merged.start)} – {fmt_time(merged.end)}"
+        )
 
     def action_nudge_start(self, delta: float) -> None:
         frag = self._selected_fragment()
