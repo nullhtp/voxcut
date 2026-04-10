@@ -26,11 +26,28 @@ audio — powered by [SAM-Audio (MLX)](https://huggingface.co/mlx-community/sam-
 - **Context-aware UI** — status bar shows selected fragment details and cursor
   position; footer shows only essential keys; full reference via `?`
 
-## Setup
+## Install
 
-Requires [uv](https://docs.astral.sh/uv/) and `ffmpeg` on `PATH`.
+### Homebrew (recommended)
 
 ```bash
+brew tap nullhtp/voxcut
+brew install voxcut
+```
+
+### pip / uv
+
+```bash
+uv tool install voxcut    # or: pip install voxcut
+```
+
+Requires `ffmpeg` on `PATH` (`brew install ffmpeg`).
+
+### From source
+
+```bash
+git clone https://github.com/nullhtp/voxcut.git
+cd voxcut
 uv sync
 ```
 
