@@ -7,6 +7,9 @@ audio — powered by [SAM-Audio (MLX)](https://huggingface.co/mlx-community/sam-
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-only-black)
 ![Python](https://img.shields.io/badge/python-3.11+-green)
 
+![Main screen](_docs/main_screen.png)
+![Voice isolation dialog](_docs/isolate_screen.png)
+
 ## Features
 
 - **Playback** — play, seek, speed control (0.5-2x), volume gain (±dB),
