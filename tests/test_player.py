@@ -1,7 +1,7 @@
 """Tests for the Player class."""
 import numpy as np
 
-from sam3_audio.player import Player
+from voxcut.player import Player
 
 
 def test_creation():

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .fragment import Fragment
 
-_SUFFIX = ".sam3.json"
+_SUFFIX = ".voxcut.json"
 _VERSION = 1
 
 

@@ -1,4 +1,4 @@
-# sam3-audio
+# voxcut
 
 Audio editing TUI for Apple Silicon: cut fragments, isolate voices, and scrub
 audio — powered by [SAM-Audio (MLX)](https://huggingface.co/mlx-community/sam-audio-large-fp16).
@@ -39,7 +39,7 @@ uv sync
 ### CLI: isolate a voice
 
 ```bash
-uv run sam3-separate alex.mp3 "man speaking"
+uv run voxcut-separate alex.mp3 "man speaking"
 ```
 
 Writes `alex_target.wav` (isolated) and `alex_residual.wav` (everything else).
@@ -47,8 +47,8 @@ Writes `alex_target.wav` (isolated) and `alex_residual.wav` (everything else).
 ### TUI: interactive editor
 
 ```bash
-uv run sam3-audio recording.mp3    # open a file
-uv run sam3-audio                  # no arg — file picker on startup
+uv run voxcut recording.mp3    # open a file
+uv run voxcut                  # no arg — file picker on startup
 ```
 
 ## Keybindings
@@ -110,14 +110,14 @@ Press `?` inside the TUI for the full reference. Summary:
 ## Session persistence
 
 Fragments, last description, and description history auto-save to
-`<input>.sam3.json` next to the audio file. Reloaded automatically on next
+`<input>.voxcut.json` next to the audio file. Reloaded automatically on next
 open. The sidecar is gitignored by default.
 
 ## Project layout
 
 ```
-sam3_audio/
-  cli.py              entry points (sam3-audio, sam3-separate)
+voxcut/
+  cli.py              entry points (voxcut, voxcut-separate)
   tui.py              Textual application
   player.py           numpy-backed audio player with gain
   fragment.py          Fragment value object

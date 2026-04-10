@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import soundfile as sf
 
-from sam3_audio.ffmpeg import concat_cuts, cut, decode_to_wav, split_cuts
-from sam3_audio.fragment import Fragment
+from voxcut.ffmpeg import concat_cuts, cut, decode_to_wav, split_cuts
+from voxcut.fragment import Fragment
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH"

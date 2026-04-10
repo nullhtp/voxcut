@@ -1,7 +1,7 @@
 """Tests for waveform rendering."""
 import numpy as np
 
-from sam3_audio.waveform import compute_peaks, render
+from voxcut.waveform import compute_peaks, render
 
 
 def test_compute_peaks_shape():

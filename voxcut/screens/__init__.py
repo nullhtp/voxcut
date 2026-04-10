@@ -1,4 +1,4 @@
-"""Modal screens for the sam3-audio TUI."""
+"""Modal screens for the voxcut TUI."""
 from .confirm import ConfirmScreen
 from .describe_prompt import DescribePrompt
 from .help import HelpScreen

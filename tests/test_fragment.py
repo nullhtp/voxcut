@@ -1,5 +1,5 @@
 """Tests for Fragment value object."""
-from sam3_audio.fragment import Fragment
+from voxcut.fragment import Fragment
 
 
 def test_duration():

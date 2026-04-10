@@ -1,5 +1,5 @@
 """Tests for timeutil module."""
-from sam3_audio.timeutil import fmt_time
+from voxcut.timeutil import fmt_time
 
 
 def test_zero():

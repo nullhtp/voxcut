@@ -1,12 +1,12 @@
 """Tests for session persistence."""
 from pathlib import Path
 
-from sam3_audio.fragment import Fragment
-from sam3_audio.session import Session, load, save, sidecar_path
+from voxcut.fragment import Fragment
+from voxcut.session import Session, load, save, sidecar_path
 
 
 def test_sidecar_path():
-    assert sidecar_path(Path("foo.mp3")) == Path("foo.mp3.sam3.json")
+    assert sidecar_path(Path("foo.mp3")) == Path("foo.mp3.voxcut.json")
 
 
 def test_roundtrip(tmp_path: Path):
