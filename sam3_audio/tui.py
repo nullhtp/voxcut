@@ -284,6 +284,7 @@ class AudioTUI(App):
             f"{state} {bar} {fmt_time(pos)} / {fmt_time(dur)}   "
             f"speed {self.player.speed:.1f}x{gain_str}"
         )
+        self._refresh_marks()
         cursor_frac = (pos / dur) if dur else 0.0
         self._w_waveform.update(waveform.render(
             self._peaks,
@@ -294,13 +295,32 @@ class AudioTUI(App):
         ))
 
     def _refresh_marks(self) -> None:
-        ip = fmt_time(self.in_point) if self.in_point is not None else "—"
-        n = len(self.fragments)
-        total = sum(f.duration for f in self.fragments)
-        frag_info = f"{n} fragments ({fmt_time(total)})" if n else "no fragments"
-        self._w_marks.update(
-            f"in: {ip}    {frag_info} — enter to play, ? for help"
-        )
+        parts: list[str] = []
+        pos = self.player.position
+
+        # In-point
+        if self.in_point is not None:
+            parts.append(f"in: {fmt_time(self.in_point)}")
+
+        # Selected fragment context
+        frag = self._selected_fragment()
+        if frag is not None:
+            idx = self.fragments.index(frag)
+            inside = frag.start <= pos <= frag.end
+            loc = "cursor inside" if inside else "cursor outside"
+            parts.append(
+                f"#{idx + 1}  {fmt_time(frag.start)} → {fmt_time(frag.end)} "
+                f"({fmt_time(frag.duration)})  [{loc}]"
+            )
+        else:
+            n = len(self.fragments)
+            total = sum(f.duration for f in self.fragments)
+            if n:
+                parts.append(f"{n} fragments ({fmt_time(total)})")
+            else:
+                parts.append("no fragments — i/o to mark")
+
+        self._w_marks.update("    ".join(parts))
 
     def _refresh_list(self, select: int | None = None) -> None:
         lv = self._w_list
